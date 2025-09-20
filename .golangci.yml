@@ -1,0 +1,21 @@
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(conflux)
+  govet:
+    check-shadowing: true
+  misspell:
+    locale: US
+
+linters:
+  enable:
+    - gci
+    - gofmt
+    - govet
+    - misspell
+    - staticcheck
+    - unused
+    - gosec
+    - errcheck
