@@ -12,6 +12,21 @@ A command-line tool to synchronize local markdown files to Confluence spaces.
 
 ## Installation
 
+### From Source
+
+```bash
+# Build locally
+make build
+
+# Install to /usr/local/bin (requires sudo)
+make install
+
+# Uninstall
+make uninstall
+```
+
+### Manual Build
+
 ```bash
 go build -o conflux ./cmd/conflux
 ```
@@ -37,17 +52,23 @@ local:
 ## Usage
 
 ```bash
+# If installed via make install
+conflux
+
+# If using local binary
+./bin/conflux
+
 # Sync with default config
-./conflux
+conflux
 
 # Use custom config file
-./conflux -config /path/to/config.yaml
+conflux -config /path/to/config.yaml
 
 # Dry run (no changes made)
-./conflux -dry-run
+conflux -dry-run
 
 # Verbose output
-./conflux -verbose
+conflux -verbose
 ```
 
 ## Getting a Confluence API Token
