@@ -5,8 +5,8 @@
 *.so
 *.dylib
 
-# Project binary
-conflux
+# Project binary directory
+bin/
 
 # Test binary, built with `go test -c`
 *.test

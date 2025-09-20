@@ -1,10 +1,11 @@
 .PHONY: build test lint clean run
 
 BINARY_NAME=conflux
-BUILD_DIR=build
+BIN_DIR=bin
 
 build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/conflux
+	mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/conflux
 
 test:
 	go test ./...
@@ -13,7 +14,7 @@ lint:
 	golangci-lint run
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BIN_DIR)
 
 run:
 	go run ./cmd/conflux -config examples/config.yaml
