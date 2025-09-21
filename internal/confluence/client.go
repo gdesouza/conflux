@@ -102,6 +102,59 @@ func (c *Client) CreatePage(spaceKey, title, content string) (*Page, error) {
 	return &result, nil
 }
 
+// CreatePageWithParent creates a new page under a specified parent page
+func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string) (*Page, error) {
+	page := map[string]interface{}{
+		"type":  "page",
+		"title": title,
+		"space": map[string]string{"key": spaceKey},
+		"body": map[string]interface{}{
+			"storage": map[string]interface{}{
+				"value":          content,
+				"representation": "storage",
+			},
+		},
+	}
+
+	// Add parent relationship if parentID is provided
+	if parentID != "" {
+		page["ancestors"] = []map[string]string{
+			{"id": parentID},
+		}
+	}
+
+	data, err := json.Marshal(page)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal page data: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseURL+"/rest/api/content", bytes.NewBuffer(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result Page
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 	page := map[string]interface{}{
 		"id":    pageID,
