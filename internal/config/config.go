@@ -55,8 +55,5 @@ func (c *Config) validate() error {
 	if c.Confluence.SpaceKey == "" {
 		return fmt.Errorf("confluence.space_key is required")
 	}
-	if c.Local.MarkdownDir == "" {
-		return fmt.Errorf("local.markdown_dir is required")
-	}
 	return nil
 }

@@ -14,6 +14,7 @@ var (
 	verbose    = flag.Bool("verbose", false, "enable verbose logging")
 	dryRun     = flag.Bool("dry-run", false, "perform a dry run without making changes")
 	help       = flag.Bool("help", false, "show help message")
+	docsDir    = flag.String("docs", ".", "path to local markdown documents directory")
 )
 
 func main() {
@@ -30,6 +31,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to load config: %v", err)
 	}
+
+	// Override config markdown directory with CLI flag
+	cfg.Local.MarkdownDir = *docsDir
 
 	syncer := sync.New(cfg, log)
 
@@ -48,7 +52,8 @@ func printUsage() {
 	flag.PrintDefaults()
 	fmt.Printf("\nEXAMPLES:\n")
 	fmt.Printf("    conflux -config my-config.yaml\n")
-	fmt.Printf("    conflux -dry-run -verbose\n")
+	fmt.Printf("    conflux -docs ./documentation -dry-run -verbose\n")
+	fmt.Printf("    conflux -docs /path/to/markdown/files\n")
 	fmt.Printf("    conflux -help\n\n")
 	fmt.Printf("For more information, see: https://github.com/your-org/conflux\n")
 }

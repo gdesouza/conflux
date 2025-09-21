@@ -52,24 +52,37 @@ local:
 ## Usage
 
 ```bash
-# If installed via make install
+# Basic usage - sync current directory with default config
 conflux
 
-# If using local binary
-./bin/conflux
-
-# Sync with default config
-conflux
+# Specify documents directory via CLI (recommended)
+conflux -docs ./documentation
 
 # Use custom config file
 conflux -config /path/to/config.yaml
 
-# Dry run (no changes made)
-conflux -dry-run
+# Specify documents directory and custom config
+conflux -docs /path/to/markdown -config my-config.yaml
 
-# Verbose output
-conflux -verbose
+# Dry run (no changes made)
+conflux -dry-run -verbose
+
+# Complex example
+conflux -docs ./my-docs -config prod-config.yaml -dry-run -verbose
+
+# Show help
+conflux -help
 ```
+
+### CLI Flags
+
+- `-docs` - Path to markdown documents directory (default: current directory)
+- `-config` - Path to configuration file (default: "config.yaml") 
+- `-dry-run` - Preview changes without syncing to Confluence
+- `-verbose` - Enable detailed logging output
+- `-help` - Show usage information
+
+**Note**: The `-docs` flag will override any `markdown_dir` specified in your config file, making it easy to work with different document directories.
 
 ## Getting a Confluence API Token
 
