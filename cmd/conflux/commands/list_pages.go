@@ -19,10 +19,15 @@ var (
 var listPagesCmd = &cobra.Command{
 	Use:   "list-pages",
 	Short: "List page hierarchy from a Confluence space",
-	Long: `List page hierarchy from a Confluence space.
+	Long: `List page hierarchy from a Confluence space with visual tree formatting.
 
 This command connects to Confluence and retrieves the page hierarchy for a specified
-space. You can optionally specify a parent page to start the hierarchy from.`,
+space, displaying it with icons and tree formatting for easy navigation:
+  🏢 Space indicators
+  📁 Folders (pages with children)
+  📄 Pages (leaf nodes)
+
+You can optionally specify a parent page to start the hierarchy from.`,
 	Example: `  conflux list-pages -space DOCS                     # List all pages in space
   conflux list-pages -space DOCS -parent "API"      # List pages under parent
   conflux list-pages -space TEAM -v                 # List with verbose logging`,
@@ -49,24 +54,50 @@ func runListPages(cmd *cobra.Command, args []string) error {
 	}
 
 	if parentPage != "" {
-		fmt.Printf("Page hierarchy under '%s' in space '%s':\n\n", parentPage, space)
+		fmt.Printf("🏢 Space '%s' → 📁 '%s':\n\n", space, parentPage)
 	} else {
-		fmt.Printf("All pages in space '%s':\n\n", space)
+		fmt.Printf("🏢 Space '%s':\n\n", space)
 	}
 
-	printPageTree(pages, 0)
+	printPageTree(pages, 0, true)
 	return nil
 }
 
-func printPageTree(pages []confluence.PageInfo, indent int) {
-	for _, page := range pages {
+func printPageTree(pages []confluence.PageInfo, indent int, isRoot bool) {
+	for i, page := range pages {
+		isLast := i == len(pages)-1
+
+		// Build prefix with proper tree formatting
 		prefix := ""
-		for i := 0; i < indent; i++ {
-			prefix += "  "
+		if !isRoot {
+			for j := 0; j < indent; j++ {
+				prefix += "  "
+			}
+			if isLast {
+				prefix += "└── "
+			} else {
+				prefix += "├── "
+			}
 		}
-		fmt.Printf("%s- %s (ID: %s)\n", prefix, page.Title, page.ID)
+
+		// Choose icon based on whether page has children
+		var icon string
 		if len(page.Children) > 0 {
-			printPageTree(page.Children, indent+1)
+			icon = "📁"
+		} else {
+			icon = "📄"
+		}
+
+		// Print the page with icon
+		if isRoot {
+			fmt.Printf("%s %s %s (ID: %s)\n", icon, prefix, page.Title, page.ID)
+		} else {
+			fmt.Printf("%s%s %s (ID: %s)\n", prefix, icon, page.Title, page.ID)
+		}
+
+		// Recursively print children
+		if len(page.Children) > 0 {
+			printPageTree(page.Children, indent+1, false)
 		}
 	}
 }
