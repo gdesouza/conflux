@@ -20,10 +20,16 @@ type Client struct {
 }
 
 type Page struct {
-	ID       string `json:"id,omitempty"`
-	Title    string `json:"title"`
-	Content  string `json:"body,omitempty"`
-	SpaceKey string `json:"space,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Title string `json:"title"`
+	Body  struct {
+		Storage struct {
+			Value string `json:"value"`
+		} `json:"storage"`
+	} `json:"body,omitempty"`
+	Space struct {
+		Key string `json:"key"`
+	} `json:"space,omitempty"`
 }
 
 type PageInfo struct {
