@@ -30,6 +30,9 @@ type Page struct {
 	Space struct {
 		Key string `json:"key"`
 	} `json:"space,omitempty"`
+	Version struct {
+		Number int `json:"number"`
+	} `json:"version,omitempty"`
 }
 
 type PageInfo struct {
@@ -156,6 +159,15 @@ func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string)
 }
 
 func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
+	// First, get the current page to retrieve its version
+	currentPage, err := c.GetPage(pageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current page version: %w", err)
+	}
+
+	// Increment the version number
+	newVersion := currentPage.Version.Number + 1
+
 	page := map[string]interface{}{
 		"id":    pageID,
 		"type":  "page",
@@ -167,7 +179,7 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 			},
 		},
 		"version": map[string]interface{}{
-			"number": 2,
+			"number": newVersion,
 		},
 	}
 
@@ -183,6 +195,33 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 
 	req.SetBasicAuth(c.username, c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result Page
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) GetPage(pageID string) (*Page, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"?expand=version", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
