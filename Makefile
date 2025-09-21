@@ -1,4 +1,4 @@
-.PHONY: build test lint clean run install uninstall
+.PHONY: build test lint clean run install uninstall version-major version-minor version-patch version-show version-help
 
 BINARY_NAME=conflux
 BIN_DIR=bin
@@ -42,3 +42,57 @@ dev:
 install-deps:
 	go mod tidy
 	go mod download
+
+# Version management functions
+define get_current_version
+$(shell git tag --list 'v*' --sort=-version:refname | head -n1 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+endef
+
+define increment_version
+$(shell echo "$(1)" | awk -F. -v part="$(2)" '
+BEGIN {
+	major = $$1; minor = $$2; patch = $$3;
+	if (part == "major") { major++; minor=0; patch=0 }
+	else if (part == "minor") { minor++; patch=0 }
+	else if (part == "patch") { patch++ }
+	printf "%d.%d.%d", major, minor, patch
+}')
+endef
+
+# Version targets
+version-show:
+	@current_version=$$(git tag --list 'v*' --sort=-version:refname | head -n1 2>/dev/null || echo "v0.0.0"); \
+	echo "Current version: $$current_version"
+
+version-major:
+	@current_version=$$(git tag --list 'v*' --sort=-version:refname | head -n1 2>/dev/null | sed 's/^v//' || echo "0.0.0"); \
+	new_version=$$(echo "$$current_version" | awk -F. '{ printf "%d.%d.%d", $$1+1, 0, 0 }'); \
+	echo "Bumping version: v$$current_version → v$$new_version (major)"; \
+	git tag -a "v$$new_version" -m "Release v$$new_version: Major version bump"; \
+	echo "Tagged v$$new_version successfully!"
+
+version-minor:
+	@current_version=$$(git tag --list 'v*' --sort=-version:refname | head -n1 2>/dev/null | sed 's/^v//' || echo "0.0.0"); \
+	new_version=$$(echo "$$current_version" | awk -F. '{ printf "%d.%d.%d", $$1, $$2+1, 0 }'); \
+	echo "Bumping version: v$$current_version → v$$new_version (minor)"; \
+	git tag -a "v$$new_version" -m "Release v$$new_version: Minor version bump"; \
+	echo "Tagged v$$new_version successfully!"
+
+version-patch:
+	@current_version=$$(git tag --list 'v*' --sort=-version:refname | head -n1 2>/dev/null | sed 's/^v//' || echo "0.0.0"); \
+	new_version=$$(echo "$$current_version" | awk -F. '{ printf "%d.%d.%d", $$1, $$2, $$3+1 }'); \
+	echo "Bumping version: v$$current_version → v$$new_version (patch)"; \
+	git tag -a "v$$new_version" -m "Release v$$new_version: Patch version bump"; \
+	echo "Tagged v$$new_version successfully!"
+
+version-help:
+	@echo "Version Management Commands:"
+	@echo "  make version-show    Show current version"
+	@echo "  make version-major   Bump major version (1.0.0 → 2.0.0)"
+	@echo "  make version-minor   Bump minor version (1.0.0 → 1.1.0)" 
+	@echo "  make version-patch   Bump patch version (1.0.0 → 1.0.1)"
+	@echo ""
+	@echo "Example workflow:"
+	@echo "  git add . && git commit -m 'Add new feature'"
+	@echo "  make version-minor"
+	@echo "  git push origin main --tags"
