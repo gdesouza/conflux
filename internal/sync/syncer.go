@@ -189,9 +189,19 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 
 	s.logger.Info("Creating directory page: %s", title)
 
-	// Basic content for directory page
+	// Enhanced content for directory page with children display
 	content := fmt.Sprintf(`<h1>%s</h1>
-<p>This section contains documentation for %s.</p>
+<p>This section contains documentation for %s. The pages below are automatically listed and updated whenever child pages are added or modified.</p>
+
+<ac:structured-macro ac:name="children" ac:schema-version="2">
+<ac:parameter ac:name="all">true</ac:parameter>
+<ac:parameter ac:name="sort">title</ac:parameter>
+<ac:parameter ac:name="style">h4</ac:parameter>
+<ac:parameter ac:name="excerpt">simple</ac:parameter>
+<ac:parameter ac:name="depth">1</ac:parameter>
+<ac:parameter ac:name="first">50</ac:parameter>
+</ac:structured-macro>
+
 <p><em>This page was automatically created to organize documentation hierarchy.</em></p>`, title, dirName)
 
 	var page *confluence.Page
