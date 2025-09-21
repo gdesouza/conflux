@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"conflux/pkg/logger"
 )
@@ -78,6 +79,11 @@ func (c *Client) CreatePage(spaceKey, title, content string) (*Page, error) {
 		return nil, fmt.Errorf("failed to marshal page data: %w", err)
 	}
 
+	// Debug: Log directory pages with children macro content
+	if c.logger != nil && len(content) > 0 && (containsChildrenMacro(content) || containsDirectoryKeywords(content)) {
+		c.logger.Debug("Creating directory page '%s' with children macro content", title)
+	}
+
 	req, err := http.NewRequest("POST", c.baseURL+"/rest/api/content", bytes.NewBuffer(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -105,7 +111,6 @@ func (c *Client) CreatePage(spaceKey, title, content string) (*Page, error) {
 	return &result, nil
 }
 
-// CreatePageWithParent creates a new page under a specified parent page
 func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string) (*Page, error) {
 	page := map[string]interface{}{
 		"type":  "page",
@@ -129,6 +134,11 @@ func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string)
 	data, err := json.Marshal(page)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal page data: %w", err)
+	}
+
+	// Debug: Log directory pages with children macro content
+	if c.logger != nil && len(content) > 0 && (containsChildrenMacro(content) || containsDirectoryKeywords(content)) {
+		c.logger.Debug("Creating directory page '%s' with parent '%s' and children macro content", title, parentID)
 	}
 
 	req, err := http.NewRequest("POST", c.baseURL+"/rest/api/content", bytes.NewBuffer(data))
@@ -159,6 +169,11 @@ func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string)
 }
 
 func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
+	// Debug: Log directory page updates
+	if c.logger != nil && len(content) > 0 && (containsChildrenMacro(content) || containsDirectoryKeywords(content)) {
+		c.logger.Debug("Updating directory page '%s' with children macro content", title)
+	}
+
 	// First, get the current page to retrieve its version
 	currentPage, err := c.GetPage(pageID)
 	if err != nil {
@@ -462,4 +477,21 @@ func (c *Client) getChildPages(pageID string) ([]PageInfo, error) {
 	}
 
 	return result.Results, nil
+}
+
+// Helper functions for debug logging
+func containsChildrenMacro(content string) bool {
+	return strings.Contains(content, "ac:structured-macro ac:name=\"children\"") ||
+		strings.Contains(content, "ac:structured-macro ac:name='children'") ||
+		strings.Contains(content, "children")
+}
+
+func containsDirectoryKeywords(content string) bool {
+	content = strings.ToLower(content)
+	return strings.Contains(content, "directory page") ||
+		strings.Contains(content, "automatically created to organize") ||
+		strings.Contains(content, "automatically created") ||
+		strings.Contains(content, "documentation for") ||
+		strings.Contains(content, "directory") ||
+		strings.Contains(content, "organize")
 }

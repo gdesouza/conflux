@@ -36,10 +36,11 @@ type Syncer struct {
 }
 
 func New(cfg *config.Config, log *logger.Logger) *Syncer {
-	client := confluence.New(
+	client := confluence.NewClient(
 		cfg.Confluence.BaseURL,
 		cfg.Confluence.Username,
 		cfg.Confluence.APIToken,
+		log,
 	)
 
 	return &Syncer{
@@ -189,17 +190,15 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 
 	s.logger.Info("Creating directory page: %s", title)
 
-	// Enhanced content for directory page with children display
+	// Enhanced content for directory page with child items display
+	// Testing simplified children macro without ac:macro-id attribute and minimal parameters
 	content := fmt.Sprintf(`<h1>%s</h1>
 <p>This section contains documentation for %s. The pages below are automatically listed and updated whenever child pages are added or modified.</p>
 
-<ac:structured-macro ac:name="children" ac:schema-version="2">
+<h2>Contents</h2>
+<ac:structured-macro ac:name="children" ac:schema-version="1">
 <ac:parameter ac:name="all">true</ac:parameter>
 <ac:parameter ac:name="sort">title</ac:parameter>
-<ac:parameter ac:name="style">h4</ac:parameter>
-<ac:parameter ac:name="excerpt">simple</ac:parameter>
-<ac:parameter ac:name="depth">1</ac:parameter>
-<ac:parameter ac:name="first">50</ac:parameter>
 </ac:structured-macro>
 
 <p><em>This page was automatically created to organize documentation hierarchy.</em></p>`, title, dirName)
@@ -222,8 +221,15 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	}
 
 	if existingPage != nil {
-		s.logger.Info("Directory page already exists: %s", title)
-		return existingPage, nil
+		s.logger.Info("Directory page already exists, updating content: %s", title)
+		// Update the existing directory page with new content
+		updatedPage, err := s.confluence.UpdatePage(existingPage.ID, title, content)
+		if err != nil {
+			s.logger.Info("Failed to update directory page, will recreate: %s", err)
+		} else {
+			s.logger.Info("Successfully updated directory page: %s (ID: %s)", title, updatedPage.ID)
+			return updatedPage, nil
+		}
 	}
 
 	// Create the directory page
