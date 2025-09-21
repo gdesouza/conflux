@@ -191,7 +191,6 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	s.logger.Info("Creating directory page: %s", title)
 
 	// Enhanced content for directory page with child items display
-	// Testing simplified children macro without ac:macro-id attribute and minimal parameters
 	content := fmt.Sprintf(`<h1>%s</h1>
 <p>This section contains documentation for %s. The pages below are automatically listed and updated whenever child pages are added or modified.</p>
 
@@ -201,7 +200,7 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 <ac:parameter ac:name="sort">title</ac:parameter>
 </ac:structured-macro>
 
-<p><em>This page was automatically created to organize documentation hierarchy.</em></p>`, title, dirName)
+<p><em>This page was automatically created by <a href="https://github.com/gdesouza/conflux">Conflux</a> to organize documentation hierarchy.</em></p>`, title, dirName)
 
 	var page *confluence.Page
 	var err error
