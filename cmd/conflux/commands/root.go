@@ -20,7 +20,7 @@ var rootCmd = &cobra.Command{
 It provides commands to sync documentation and list page hierarchies with visual 
 formatting including icons and tree structures for easy navigation.`,
 	Example: `  conflux sync                                    # Sync current directory
-  conflux sync -docs ./docs -dry-run             # Sync with options
+  conflux sync -docs ./docs -space DOCS -dry-run # Sync with options
   conflux list-pages -space DOCS                 # List all pages with icons
   conflux list-pages -space DOCS -parent "API"   # List under parent with tree view`,
 }

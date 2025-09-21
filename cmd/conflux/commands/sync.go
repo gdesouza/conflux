@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	dryRun  bool
-	docsDir string
+	dryRun   bool
+	docsDir  string
+	spaceKey string
 )
 
 // syncCmd represents the sync command
@@ -26,20 +27,31 @@ them with Confluence pages based on the configuration file.`,
 	Example: `  conflux sync                                # Sync current directory
   conflux sync -docs ./documentation         # Sync specific directory
   conflux sync -docs ./docs -dry-run         # Dry run sync
-  conflux sync -config prod-config.yaml -v   # Sync with verbose logging`,
+  conflux sync -space DOCS -v                # Sync to specific space with verbose logging
+  conflux sync -config prod-config.yaml -v   # Sync with custom config file`,
 	RunE: runSync,
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
 	log := logger.New(verbose)
 
-	cfg, err := config.Load(configFile)
+	cfg, err := config.LoadForSync(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Override config markdown directory with CLI flag
 	cfg.Local.MarkdownDir = docsDir
+
+	// Override space key if provided via CLI flag
+	if spaceKey != "" {
+		cfg.Confluence.SpaceKey = spaceKey
+	}
+
+	// Validate that space key is available either from config or CLI
+	if cfg.Confluence.SpaceKey == "" {
+		return fmt.Errorf("space key is required: provide via config file or use --space flag")
+	}
 
 	syncer := sync.New(cfg, log)
 
@@ -57,4 +69,5 @@ func init() {
 	// Local flags for sync command
 	syncCmd.Flags().BoolVar(&dryRun, "dry-run", false, "perform a dry run without making changes")
 	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown documents directory")
+	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config file)")
 }
