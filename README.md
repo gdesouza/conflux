@@ -51,6 +51,8 @@ local:
 
 ## Usage
 
+### Sync Command (Default)
+
 ```bash
 # Basic usage - sync current directory with default config
 conflux
@@ -62,25 +64,47 @@ conflux -docs ./documentation
 conflux -config /path/to/config.yaml
 
 # Specify documents directory and custom config
-conflux -docs /path/to/markdown -config my-config.yaml
+conflux sync -docs /path/to/markdown -config my-config.yaml
 
 # Dry run (no changes made)
-conflux -dry-run -verbose
+conflux sync -dry-run -verbose
 
 # Complex example
-conflux -docs ./my-docs -config prod-config.yaml -dry-run -verbose
-
-# Show help
-conflux -help
+conflux sync -docs ./my-docs -config prod-config.yaml -dry-run -verbose
 ```
+
+### List Pages Command
+
+```bash
+# List all pages in a space
+conflux list-pages -space DOCS
+
+# List pages under a specific parent page
+conflux list-pages -space DOCS -parent "API Documentation"
+
+# Use custom config file
+conflux list-pages -config prod-config.yaml -space TEAM -verbose
+```
+
+### CLI Commands
+
+- `sync` - Sync local markdown files to Confluence (default command)
+- `list-pages` - List page hierarchy from a Confluence space
 
 ### CLI Flags
 
-- `-docs` - Path to markdown documents directory (default: current directory)
+**Global Flags:**
 - `-config` - Path to configuration file (default: "config.yaml") 
-- `-dry-run` - Preview changes without syncing to Confluence
 - `-verbose` - Enable detailed logging output
 - `-help` - Show usage information
+
+**Sync Command Flags:**
+- `-docs` - Path to markdown documents directory (default: current directory)
+- `-dry-run` - Preview changes without syncing to Confluence
+
+**List-Pages Command Flags:**
+- `-space` - Confluence space key (required)
+- `-parent` - Parent page title to start hierarchy from (optional)
 
 **Note**: The `-docs` flag will override any `markdown_dir` specified in your config file, making it easy to work with different document directories.
 
