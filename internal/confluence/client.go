@@ -213,11 +213,23 @@ func (c *Client) GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageInfo,
 }
 
 func (c *Client) getAllPagesInSpace(spaceKey string) ([]PageInfo, error) {
+	// Get all pages and build proper hierarchy
+	allPages, err := c.getAllPagesWithParents(spaceKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the tree by finding root pages and their children
+	return c.buildPageTree(allPages), nil
+}
+
+// getAllPagesWithParents gets all pages in a space with parent information
+func (c *Client) getAllPagesWithParents(spaceKey string) (map[string]PageInfo, error) {
 	params := url.Values{}
 	params.Add("spaceKey", spaceKey)
 	params.Add("type", "page")
-	params.Add("limit", "100")
-	params.Add("expand", "children.page")
+	params.Add("limit", "1000")
+	params.Add("expand", "ancestors")
 
 	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content?"+params.Encode(), nil)
 	if err != nil {
@@ -239,13 +251,12 @@ func (c *Client) getAllPagesInSpace(spaceKey string) ([]PageInfo, error) {
 
 	var result struct {
 		Results []struct {
-			ID       string `json:"id"`
-			Title    string `json:"title"`
-			Children struct {
-				Page struct {
-					Results []PageInfo `json:"results"`
-				} `json:"page"`
-			} `json:"children"`
+			ID        string `json:"id"`
+			Title     string `json:"title"`
+			Ancestors []struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			} `json:"ancestors"`
 		} `json:"results"`
 	}
 
@@ -253,17 +264,63 @@ func (c *Client) getAllPagesInSpace(spaceKey string) ([]PageInfo, error) {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	var pages []PageInfo
+	pages := make(map[string]PageInfo)
+	parentChildMap := make(map[string][]string) // parentID -> []childID
+
 	for _, page := range result.Results {
 		pageInfo := PageInfo{
 			ID:       page.ID,
 			Title:    page.Title,
-			Children: page.Children.Page.Results,
+			Children: []PageInfo{}, // Initialize empty, will be populated later
 		}
-		pages = append(pages, pageInfo)
+		pages[page.ID] = pageInfo
+
+		// Determine parent-child relationships
+		var parentID string
+		if len(page.Ancestors) > 0 {
+			// The immediate parent is the last ancestor
+			parentID = page.Ancestors[len(page.Ancestors)-1].ID
+		}
+
+		if parentID != "" {
+			parentChildMap[parentID] = append(parentChildMap[parentID], page.ID)
+		}
+	}
+
+	// Now build the children relationships
+	for parentID, childIDs := range parentChildMap {
+		if parent, exists := pages[parentID]; exists {
+			for _, childID := range childIDs {
+				if child, exists := pages[childID]; exists {
+					parent.Children = append(parent.Children, child)
+				}
+			}
+			pages[parentID] = parent
+		}
 	}
 
 	return pages, nil
+}
+
+// buildPageTree builds the tree structure by identifying root pages
+func (c *Client) buildPageTree(allPages map[string]PageInfo) []PageInfo {
+	// First pass: identify all pages that are children of other pages
+	childPages := make(map[string]bool)
+	for _, page := range allPages {
+		for _, child := range page.Children {
+			childPages[child.ID] = true
+		}
+	}
+
+	// Second pass: root pages are those that are not children of any other page
+	var rootPages []PageInfo
+	for _, page := range allPages {
+		if !childPages[page.ID] {
+			rootPages = append(rootPages, page)
+		}
+	}
+
+	return rootPages
 }
 
 func (c *Client) getChildPages(pageID string) ([]PageInfo, error) {
