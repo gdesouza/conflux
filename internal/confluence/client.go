@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"conflux/pkg/logger"
@@ -40,6 +43,14 @@ type PageInfo struct {
 	ID       string     `json:"id"`
 	Title    string     `json:"title"`
 	Children []PageInfo `json:"children,omitempty"`
+}
+
+type Attachment struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Filename  string `json:"filename,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
 }
 
 func New(baseURL, username, apiToken string) *Client {
@@ -477,6 +488,107 @@ func (c *Client) getChildPages(pageID string) ([]PageInfo, error) {
 	}
 
 	return result.Results, nil
+}
+
+func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// Create multipart form
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add file field
+	filename := filepath.Base(filePath)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	}
+
+	// Close the multipart writer
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest("POST", c.baseURL+"/rest/api/content/"+pageID+"/child/attachment", body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Atlassian-Token", "no-check")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Results []Attachment `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Results) == 0 {
+		return nil, fmt.Errorf("no attachment returned in response")
+	}
+
+	if c.logger != nil {
+		c.logger.Debug("Uploaded attachment '%s' to page ID '%s'", filename, pageID)
+	}
+
+	return &result.Results[0], nil
+}
+
+func (c *Client) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"/child/attachment/"+attachmentID, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Links struct {
+			Download string `json:"download"`
+		} `json:"_links"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// The download URL is relative, need to make it absolute
+	downloadURL := c.baseURL + result.Links.Download
+	return downloadURL, nil
 }
 
 // Helper functions for debug logging

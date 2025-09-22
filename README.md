@@ -1,10 +1,11 @@
 # Conflux
 
-A command-line tool to synchronize local markdown files to Confluence spaces.
+A command-line tool to synchronize local markdown files to Confluence spaces with Mermaid.js diagram support.
 
 ## Features
 
 - **Sync markdown files to Confluence pages** - Convert and upload your local documentation
+- **Mermaid.js diagram support** - Automatically convert or preserve mermaid diagrams in your documentation
 - **Automatic directory page creation** - Creates organized parent pages with children macros for folder structures
 - **Smart page hierarchy** - Maintains your local directory structure in Confluence
 - **Create new pages or update existing ones** - Handles both new content and updates seamlessly
@@ -13,6 +14,78 @@ A command-line tool to synchronize local markdown files to Confluence spaces.
 - **Configurable file exclusions** - Skip files you don't want to sync
 - **Verbose logging** - Detailed output for debugging and monitoring
 - **Proper page versioning** - Handles Confluence page version management automatically
+
+## Mermaid.js Diagram Support
+
+Conflux supports automatic processing of Mermaid.js diagrams in your markdown files. When mermaid code blocks are detected, you can choose to either preserve them as syntax-highlighted code blocks in Confluence or convert them to images.
+
+### Setup
+
+1. **Install Mermaid CLI** (for image conversion):
+   ```bash
+   npm install -g @mermaid-js/mermaid-cli
+   ```
+
+2. **Configure mermaid support** in your `config.yaml`:
+   ```yaml
+   mermaid:
+     mode: "convert-to-image"  # Options: "preserve" or "convert-to-image"
+     format: "png"             # Options: "png", "svg", "pdf"
+     theme: "default"          # Options: "default", "dark", "forest", "neutral"
+   ```
+
+### Processing Modes
+
+**Preserve Mode** (`mode: "preserve"`):
+- Keeps mermaid diagrams as syntax-highlighted code blocks in Confluence
+- No external dependencies required
+- Diagrams remain editable in Confluence
+
+**Convert-to-Image Mode** (`mode: "convert-to-image"`):
+- Converts mermaid diagrams to images (PNG, SVG, or PDF)
+- Images are uploaded as Confluence attachments
+- Requires `@mermaid-js/mermaid-cli` to be installed
+- Provides better visual presentation
+
+### Example Usage
+
+Create a markdown file with mermaid diagrams:
+
+````markdown
+# System Architecture
+
+```mermaid
+graph TD
+    A[User] --> B[Frontend]
+    B --> C[API Gateway]
+    C --> D[Backend Service]
+    D --> E[Database]
+```
+
+## Process Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant B as Backend
+    U->>F: Login Request
+    F->>B: Authenticate
+    B-->>F: Token
+    F-->>U: Success
+```
+````
+
+When synced to Confluence:
+- **Preserve mode**: Diagrams appear as formatted code blocks
+- **Convert-to-image mode**: Diagrams are rendered as images and embedded in the page
+
+### Dependency Checking
+
+Conflux automatically checks for mermaid CLI availability:
+- If `mmdc` is not found and mode is "convert-to-image", it falls back to "preserve" mode
+- Use `conflux sync -verbose` to see dependency check results
+- Graceful fallback ensures sync operations continue even if CLI is unavailable
 
 ## Installation
 
@@ -92,6 +165,13 @@ local:
   exclude:
     - "README.md"
     - "*.tmp.md"
+
+# Optional: Mermaid.js diagram support
+mermaid:
+  mode: "convert-to-image"  # or "preserve"
+  format: "png"             # png, svg, or pdf (for convert-to-image mode)
+  cli_path: "mmdc"          # path to mermaid CLI (optional, uses 'mmdc' by default)
+  theme: "default"          # mermaid theme: default, dark, forest, neutral
 ```
 
 ## Usage
@@ -170,6 +250,30 @@ The children macro requires:
 - **Valid Confluence space** - Make sure your space exists and is accessible
 - **Appropriate permissions** - Your API token needs page creation/update rights
 
+### Mermaid Diagrams Not Converting
+
+If mermaid diagrams aren't being converted to images:
+
+1. **Check CLI installation**: Ensure `@mermaid-js/mermaid-cli` is installed globally
+   ```bash
+   npm install -g @mermaid-js/mermaid-cli
+   mmdc --version  # Should show version number
+   ```
+
+2. **Verify configuration**: Check your `config.yaml` has correct mermaid settings
+   ```yaml
+   mermaid:
+     mode: "convert-to-image"
+     format: "png"
+   ```
+
+3. **Check dependencies**: Use verbose mode to see dependency check results
+   ```bash
+   conflux sync -verbose -dry-run
+   ```
+
+4. **Fallback behavior**: If CLI is unavailable, Conflux automatically falls back to preserve mode
+
 ### Debug Output
 
 Use the verbose flag (`-v` or `-verbose`) to see detailed information about:
@@ -177,6 +281,8 @@ Use the verbose flag (`-v` or `-verbose`) to see detailed information about:
 - Directory page content generation
 - API requests and responses
 - Children macro detection and processing
+- Mermaid diagram detection and conversion
+- Dependency checks and fallback decisions
 
 ```bash
 # Example with full debug output
@@ -192,7 +298,18 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 
 ## Recent Improvements
 
-### v1.1.0 (Latest)
+### v1.2.0 (Latest)
+- **✅ Mermaid.js diagram support** - Automatically process mermaid diagrams with two modes:
+  - **Preserve mode**: Keep diagrams as syntax-highlighted code blocks
+  - **Convert-to-image mode**: Convert to PNG/SVG/PDF and upload as attachments
+- **✅ Enhanced markdown processing** - Extended parser to detect and handle mermaid code blocks
+- **✅ Confluence attachment support** - Added API methods for uploading and managing attachments
+- **✅ Dependency checking** - Automatic detection of mermaid CLI availability with graceful fallbacks
+- **✅ Configurable mermaid themes** - Support for default, dark, forest, and neutral themes
+- **✅ Multiple output formats** - PNG, SVG, and PDF support for converted diagrams
+- **✅ Security improvements** - Upgraded from MD5 to SHA256 for file hashing
+
+### v1.1.0
 - **✅ Fixed children macro rendering** - Directory pages now properly display child page lists
 - **✅ Enhanced directory page updates** - Existing directory pages are now updated with new content
 - **✅ Simplified children macro** - Improved compatibility with Confluence Cloud
@@ -205,6 +322,8 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 - Children macro uses optimized parameters for better Confluence Cloud compatibility
 - Fixed logger initialization issues that prevented debug output
 - Improved Storage Format XML structure for Confluence API compatibility
+- Enhanced security with SHA256 hashing instead of MD5
+- Improved error handling and temp file cleanup in mermaid processing
 
 ## License
 

@@ -6,6 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"conflux/internal/config"
+	"conflux/internal/confluence"
+	"conflux/internal/mermaid"
 )
 
 type Document struct {
@@ -83,11 +87,17 @@ func FindMarkdownFiles(dir string, exclude []string) ([]string, error) {
 }
 
 func ConvertToConfluenceFormat(markdown string) string {
+	return ConvertToConfluenceFormatWithMermaid(markdown, nil, nil, "")
+}
+
+func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, client *confluence.Client, pageID string) string {
 	lines := strings.Split(markdown, "\n")
 	var result []string
 	inCodeBlock := false
 	inUnorderedList := false
 	inOrderedList := false
+	var codeBlockLang string
+	var codeBlockContent []string
 
 	for _, line := range lines {
 		// Handle code blocks
@@ -95,23 +105,43 @@ func ConvertToConfluenceFormat(markdown string) string {
 			if !inCodeBlock {
 				// Starting code block
 				inCodeBlock = true
-				lang := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "```"))
-				if lang != "" {
-					result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[`, lang))
-				} else {
-					result = append(result, `<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[`)
-				}
+				codeBlockLang = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "```"))
+				codeBlockContent = []string{} // Reset content
 			} else {
 				// Ending code block
 				inCodeBlock = false
-				result = append(result, `]]></ac:plain-text-body></ac:structured-macro>`)
+
+				// Process the code block based on language
+				if codeBlockLang == "mermaid" && cfg != nil && client != nil && pageID != "" {
+					processed := processMermaidDiagram(strings.Join(codeBlockContent, "\n"), cfg, client, pageID)
+					if processed != "" {
+						result = append(result, processed)
+					} else {
+						// Fallback to regular code block if processing failed
+						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[`, codeBlockLang))
+						result = append(result, strings.Join(codeBlockContent, "\n"))
+						result = append(result, `]]></ac:plain-text-body></ac:structured-macro>`)
+					}
+				} else {
+					// Regular code block processing
+					if codeBlockLang != "" {
+						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[`, codeBlockLang))
+					} else {
+						result = append(result, `<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[`)
+					}
+					result = append(result, strings.Join(codeBlockContent, "\n"))
+					result = append(result, `]]></ac:plain-text-body></ac:structured-macro>`)
+				}
+
+				codeBlockLang = ""
+				codeBlockContent = []string{}
 			}
 			continue
 		}
 
 		if inCodeBlock {
-			// Inside code block - preserve content as-is
-			result = append(result, line)
+			// Inside code block - collect content
+			codeBlockContent = append(codeBlockContent, line)
 			continue
 		}
 
@@ -295,4 +325,45 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "\"", "&quot;")
 	text = strings.ReplaceAll(text, "'", "&#39;")
 	return text
+}
+
+func processMermaidDiagram(content string, cfg *config.Config, client *confluence.Client, pageID string) string {
+	if cfg.Mermaid.Mode == "preserve" {
+		// Return original mermaid code block
+		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
+	}
+
+	// Validate mermaid content
+	if err := mermaid.ValidateContent(content); err != nil {
+		// Return as regular code block if invalid
+		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
+	}
+
+	// Create processor
+	processor := mermaid.NewProcessor(&cfg.Mermaid, nil)
+
+	// Process diagram to image
+	result, err := processor.ProcessDiagram(content)
+	if err != nil {
+		// Return as regular code block if processing failed
+		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
+	}
+
+	// Upload image as attachment
+	attachment, err := client.UploadAttachment(pageID, result.ImagePath)
+	if err != nil {
+		// Cleanup temp file and return as code block
+		if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
+			// Log cleanup error but continue with original error
+		}
+		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
+	}
+
+	// Cleanup temp file
+	if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
+		// Log cleanup error but continue with successful result
+	}
+
+	// Return Confluence image macro
+	return fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, attachment.Filename)
 }

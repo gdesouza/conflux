@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Confluence ConfluenceConfig `yaml:"confluence"`
 	Local      LocalConfig      `yaml:"local"`
+	Mermaid    MermaidConfig    `yaml:"mermaid"`
 }
 
 type ConfluenceConfig struct {
@@ -24,6 +25,13 @@ type LocalConfig struct {
 	Exclude     []string `yaml:"exclude"`
 }
 
+type MermaidConfig struct {
+	Mode    string `yaml:"mode"`     // "preserve" or "convert-to-image"
+	Format  string `yaml:"format"`   // "svg", "png", "pdf"
+	CLIPath string `yaml:"cli_path"` // path to mermaid CLI executable
+	Theme   string `yaml:"theme"`    // mermaid theme
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -35,11 +43,50 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Set mermaid defaults
+	config.setMermaidDefaults()
+
 	if err := config.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	return &config, nil
+}
+
+func (c *Config) setMermaidDefaults() {
+	if c.Mermaid.Mode == "" {
+		c.Mermaid.Mode = "convert-to-image"
+	}
+	if c.Mermaid.Format == "" {
+		c.Mermaid.Format = "svg"
+	}
+	if c.Mermaid.CLIPath == "" {
+		c.Mermaid.CLIPath = "mmdc"
+	}
+	if c.Mermaid.Theme == "" {
+		c.Mermaid.Theme = "default"
+	}
+}
+
+func (c *Config) validateMermaid() error {
+	validModes := map[string]bool{
+		"preserve":         true,
+		"convert-to-image": true,
+	}
+	if !validModes[c.Mermaid.Mode] {
+		return fmt.Errorf("mermaid.mode must be 'preserve' or 'convert-to-image'")
+	}
+
+	validFormats := map[string]bool{
+		"svg": true,
+		"png": true,
+		"pdf": true,
+	}
+	if !validFormats[c.Mermaid.Format] {
+		return fmt.Errorf("mermaid.format must be 'svg', 'png', or 'pdf'")
+	}
+
+	return nil
 }
 
 // LoadForSync loads config with relaxed validation for space_key (can be overridden by CLI)
@@ -53,6 +100,9 @@ func LoadForSync(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	// Set mermaid defaults
+	config.setMermaidDefaults()
 
 	if err := config.validateForSync(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -72,6 +122,9 @@ func LoadForListPages(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	// Set mermaid defaults
+	config.setMermaidDefaults()
 
 	if err := config.validateForListPages(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -93,6 +146,11 @@ func (c *Config) validate() error {
 	if c.Confluence.SpaceKey == "" {
 		return fmt.Errorf("confluence.space_key is required")
 	}
+
+	if err := c.validateMermaid(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -108,6 +166,11 @@ func (c *Config) validateForSync() error {
 		return fmt.Errorf("confluence.api_token is required")
 	}
 	// Note: space_key is NOT required for sync command (can be provided via CLI)
+
+	if err := c.validateMermaid(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -123,5 +186,10 @@ func (c *Config) validateForListPages() error {
 		return fmt.Errorf("confluence.api_token is required")
 	}
 	// Note: space_key is NOT required for list-pages command
+
+	if err := c.validateMermaid(); err != nil {
+		return err
+	}
+
 	return nil
 }

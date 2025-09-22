@@ -8,6 +8,7 @@ import (
 	"conflux/internal/config"
 	"conflux/internal/confluence"
 	"conflux/internal/markdown"
+	"conflux/internal/mermaid"
 	"conflux/pkg/logger"
 )
 
@@ -52,6 +53,17 @@ func New(cfg *config.Config, log *logger.Logger) *Syncer {
 
 func (s *Syncer) Sync(dryRun bool) error {
 	s.logger.Info("Starting sync process...")
+
+	// Check mermaid dependencies if mermaid mode requires CLI
+	if s.config.Mermaid.Mode == "convert-to-image" {
+		processor := mermaid.NewProcessor(&s.config.Mermaid, s.logger)
+		if err := processor.CheckDependencies(); err != nil {
+			s.logger.Error("Mermaid CLI dependencies not met: %v", err)
+			s.logger.Info("Install mermaid CLI: npm install -g @mermaid-js/mermaid-cli")
+			return fmt.Errorf("mermaid dependencies not available: %w", err)
+		}
+		s.logger.Info("Mermaid CLI dependencies verified")
+	}
 
 	files, err := markdown.FindMarkdownFiles(s.config.Local.MarkdownDir, s.config.Local.Exclude)
 	if err != nil {
@@ -254,7 +266,8 @@ func (s *Syncer) syncFileWithHierarchy(filePath string, directoryPages map[strin
 		return fmt.Errorf("failed to parse markdown: %w", err)
 	}
 
-	confluenceContent := markdown.ConvertToConfluenceFormat(doc.Content)
+	// Convert content with mermaid support - use empty pageID for new pages
+	confluenceContent := markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, s.confluence, "")
 
 	// Determine parent page based on directory structure
 	relPath, err := filepath.Rel(s.config.Local.MarkdownDir, filePath)
@@ -352,7 +365,8 @@ func (s *Syncer) syncFile(filePath string, dryRun bool) error {
 		return fmt.Errorf("failed to parse markdown: %w", err)
 	}
 
-	confluenceContent := markdown.ConvertToConfluenceFormat(doc.Content)
+	// Convert content with mermaid support - use empty pageID for new pages
+	confluenceContent := markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, s.confluence, "")
 
 	if dryRun {
 		s.logger.Info("DRY RUN: Would sync page '%s'", doc.Title)
