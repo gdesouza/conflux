@@ -129,9 +129,18 @@ func (p *Processor) generateOutputFilename(content string) (string, error) {
 }
 
 func (p *Processor) executeMermaidCLI(inputFile, outputFile string) error {
+	// Create puppeteer config file for sandbox issues
+	puppeteerConfig := `{"args": ["--no-sandbox", "--disable-setuid-sandbox"]}`
+	configFile, err := p.createPuppeteerConfigFile(puppeteerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create puppeteer config: %w", err)
+	}
+	defer os.Remove(configFile)
+
 	args := []string{
 		"-i", inputFile,
 		"-o", outputFile,
+		"-p", configFile,
 	}
 
 	// Add theme if specified and not default
@@ -150,7 +159,7 @@ func (p *Processor) executeMermaidCLI(inputFile, outputFile string) error {
 		p.logger.Debug("Executing mermaid CLI: %s %s", p.config.CLIPath, strings.Join(args, " "))
 	}
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("mermaid CLI failed: %w\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
 	}
@@ -212,4 +221,20 @@ func ValidateContent(content string) error {
 	}
 
 	return fmt.Errorf("content does not appear to be a valid mermaid diagram")
+}
+
+func (p *Processor) createPuppeteerConfigFile(config string) (string, error) {
+	// Create temp file for puppeteer config
+	tempFile, err := os.CreateTemp("", "conflux-puppeteer-*.json")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer tempFile.Close()
+
+	if _, err := tempFile.WriteString(config); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return tempFile.Name(), nil
 }
