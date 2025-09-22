@@ -57,10 +57,39 @@ func extractTitle(lines []string, filePath string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-func FindMarkdownFiles(dir string, exclude []string) ([]string, error) {
+func FindMarkdownFiles(path string, exclude []string) ([]string, error) {
 	var files []string
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	// Check if the path is a single file
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access path %s: %w", path, err)
+	}
+
+	if !info.IsDir() {
+		// Handle single file
+		if strings.ToLower(filepath.Ext(path)) != ".md" {
+			return nil, fmt.Errorf("file %s is not a markdown file (.md)", path)
+		}
+
+		// Check if file matches any exclude pattern
+		for _, pattern := range exclude {
+			if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+				return nil, fmt.Errorf("file %s matches exclude pattern %s", path, pattern)
+			}
+		}
+
+		// Convert to absolute path
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+		}
+
+		return []string{absPath}, nil
+	}
+
+	// Handle directory (original logic)
+	err = filepath.Walk(path, func(walkPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -69,17 +98,17 @@ func FindMarkdownFiles(dir string, exclude []string) ([]string, error) {
 			return nil
 		}
 
-		if strings.ToLower(filepath.Ext(path)) != ".md" {
+		if strings.ToLower(filepath.Ext(walkPath)) != ".md" {
 			return nil
 		}
 
 		for _, pattern := range exclude {
-			if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+			if matched, _ := filepath.Match(pattern, filepath.Base(walkPath)); matched {
 				return nil
 			}
 		}
 
-		files = append(files, path)
+		files = append(files, walkPath)
 		return nil
 	})
 
@@ -124,13 +153,12 @@ func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, c
 					}
 				} else {
 					// Regular code block processing
+					codeContent := strings.TrimSpace(strings.Join(codeBlockContent, "\n"))
 					if codeBlockLang != "" {
-						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[`, codeBlockLang))
+						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeBlockLang, codeContent))
 					} else {
-						result = append(result, `<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[`)
+						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeContent))
 					}
-					result = append(result, strings.Join(codeBlockContent, "\n"))
-					result = append(result, `]]></ac:plain-text-body></ac:structured-macro>`)
 				}
 
 				codeBlockLang = ""
@@ -240,34 +268,182 @@ func closeOpenLists(result *[]string, inUnorderedList *bool, inOrderedList *bool
 }
 
 func convertInlineFormatting(text string) string {
+	// First escape HTML in the entire text
+	text = escapeHTML(text)
 	// Handle bold (**text** or __text__)
-	text = convertBold(text)
+	text = convertBoldFromEscaped(text)
 	// Handle italic (*text* or _text_)
-	text = convertItalic(text)
+	text = convertItalicFromEscaped(text)
 	// Handle inline code
-	text = convertInlineCode(text)
+	text = convertInlineCodeFromEscaped(text)
 	return text
 }
 
-func convertBold(text string) string {
-	// Handle **bold**
-	for strings.Contains(text, "**") {
-		firstIndex := strings.Index(text, "**")
+func convertBoldFromEscaped(text string) string {
+	// Handle **bold** - back to simple approach (text already escaped)
+	result := text
+
+	for strings.Contains(result, "**") {
+		firstIndex := strings.Index(result, "**")
 		if firstIndex == -1 {
 			break
 		}
-		secondIndex := strings.Index(text[firstIndex+2:], "**")
+
+		// Find the next ** after the first one
+		secondIndex := strings.Index(result[firstIndex+2:], "**")
 		if secondIndex == -1 {
 			break
 		}
 		secondIndex += firstIndex + 2
 
-		before := text[:firstIndex]
-		boldText := text[firstIndex+2 : secondIndex]
-		after := text[secondIndex+2:]
-		text = before + "<strong>" + escapeHTML(boldText) + "</strong>" + after
+		before := result[:firstIndex]
+		boldContent := result[firstIndex+2 : secondIndex]
+		after := result[secondIndex+2:]
+
+		result = before + "<strong>" + boldContent + "</strong>" + after
+	}
+	return result
+}
+
+func convertItalicFromEscaped(text string) string {
+	// Handle *italic* (but not ** which is bold) - working with escaped text
+	i := 0
+	for i < len(text) {
+		if text[i] == '*' && (i == 0 || text[i-1] != '*') && (i+1 < len(text) && text[i+1] != '*') {
+			// Found single asterisk
+			nextIndex := -1
+			for j := i + 1; j < len(text); j++ {
+				if text[j] == '*' && (j+1 >= len(text) || text[j+1] != '*') {
+					nextIndex = j
+					break
+				}
+			}
+			if nextIndex != -1 {
+				before := text[:i]
+				italicText := text[i+1 : nextIndex]
+				after := text[nextIndex+1:]
+				text = before + "<em>" + italicText + "</em>" + after
+				i = len(before) + len("<em>") + len(italicText) + len("</em>")
+				continue
+			}
+		}
+		i++
 	}
 	return text
+}
+
+func convertInlineCodeFromEscaped(text string) string {
+	// Handle `inline code` - working with escaped text
+	for strings.Contains(text, "`") {
+		firstIndex := strings.Index(text, "`")
+		if firstIndex == -1 {
+			break
+		}
+		secondIndex := strings.Index(text[firstIndex+1:], "`")
+		if secondIndex == -1 {
+			break
+		}
+		secondIndex += firstIndex + 1
+
+		before := text[:firstIndex]
+		codeText := text[firstIndex+1 : secondIndex]
+		after := text[secondIndex+1:]
+		text = before + "<code>" + codeText + "</code>" + after
+	}
+	return text
+}
+
+func convertBold(text string) string {
+	result := text
+
+	for {
+		// Skip any ** that are inside existing <strong> tags to prevent recursive processing
+		firstIndex := -1
+		for i := 0; i < len(result)-1; i++ {
+			if result[i:i+2] == "**" {
+				// Check if this ** is inside a <strong> tag
+				beforeThis := result[:i]
+				strongOpen := strings.LastIndex(beforeThis, "<strong>")
+				strongClose := strings.LastIndex(beforeThis, "</strong>")
+
+				// If the last <strong> is more recent than the last </strong>, we're inside a tag
+				if strongOpen != -1 && (strongClose == -1 || strongOpen > strongClose) {
+					continue // Skip this **, it's inside a strong tag
+				}
+
+				firstIndex = i
+				break
+			}
+		}
+
+		if firstIndex == -1 {
+			break
+		}
+
+		// Find all ** positions after the first one
+		remaining := result[firstIndex+2:]
+		if !strings.Contains(remaining, "**") {
+			break
+		}
+
+		positions := []int{}
+		searchPos := 0
+		for {
+			pos := strings.Index(remaining[searchPos:], "**")
+			if pos == -1 {
+				break
+			}
+			actualPos := firstIndex + 2 + searchPos + pos
+
+			// Check if this position is inside a strong tag
+			beforeThis := result[:actualPos]
+			strongOpen := strings.LastIndex(beforeThis, "<strong>")
+			strongClose := strings.LastIndex(beforeThis, "</strong>")
+
+			if strongOpen != -1 && (strongClose == -1 || strongOpen > strongClose) {
+				searchPos += pos + 2
+				continue // Skip this **, it's inside a strong tag
+			}
+
+			positions = append(positions, actualPos)
+			searchPos += pos + 2
+		}
+
+		if len(positions) == 0 {
+			break
+		}
+
+		var secondIndex int
+
+		if len(positions) == 1 {
+			// Simple case - only one closing **
+			secondIndex = positions[0]
+		} else if len(positions) == 3 {
+			// Check pattern for nested vs separate
+			firstClose := positions[0]
+			secondOpen := positions[1]
+			lastClose := positions[2]
+
+			betweenSections := result[firstClose+2 : secondOpen]
+
+			// Separate sections if there's meaningful content with spaces
+			if len(strings.TrimSpace(betweenSections)) > 2 && strings.Contains(betweenSections, " ") {
+				secondIndex = firstClose // **first** and **second**
+			} else {
+				secondIndex = lastClose // **nested **bold** text**
+			}
+		} else {
+			// Default to first closing
+			secondIndex = positions[0]
+		}
+
+		before := result[:firstIndex]
+		boldContent := result[firstIndex+2 : secondIndex]
+		after := result[secondIndex+2:]
+
+		result = before + "<strong>" + escapeHTML(boldContent) + "</strong>" + after
+	}
+	return result
 }
 
 func convertItalic(text string) string {
