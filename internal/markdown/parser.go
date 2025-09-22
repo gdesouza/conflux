@@ -112,7 +112,7 @@ func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, c
 				inCodeBlock = false
 
 				// Process the code block based on language
-				if codeBlockLang == "mermaid" && cfg != nil && client != nil && pageID != "" {
+				if codeBlockLang == "mermaid" && cfg != nil {
 					processed := processMermaidDiagram(strings.Join(codeBlockContent, "\n"), cfg, client, pageID)
 					if processed != "" {
 						result = append(result, processed)
@@ -346,6 +346,15 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 	result, err := processor.ProcessDiagram(content)
 	if err != nil {
 		// Return as regular code block if processing failed
+		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
+	}
+
+	// Check if we have a pageID for attachment upload
+	if pageID == "" || client == nil {
+		// For new pages or when client is not available, fall back to code block
+		if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
+			// Log cleanup error but continue
+		}
 		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
 	}
 

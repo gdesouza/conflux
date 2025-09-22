@@ -12,6 +12,8 @@ import (
 
 var (
 	dryRun   bool
+	force    bool
+	noCache  bool
 	docsDir  string
 	spaceKey string
 )
@@ -19,16 +21,18 @@ var (
 // syncCmd represents the sync command
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync local markdown files to Confluence",
-	Long: `Sync local markdown files to Confluence pages.
+	Short: "Sync local markdown files to Confluence with change detection",
+	Long: `Sync local markdown files to Confluence pages with intelligent change detection.
 
-This command reads markdown files from the specified directory and synchronizes
-them with Confluence pages based on the configuration file.`,
-	Example: `  conflux sync                                # Sync current directory
+The sync command analyzes your markdown files, detects what has changed since the last sync,
+and displays a preview of what will be updated before proceeding. It maintains a local cache
+to track file changes and only updates pages that have actually been modified.`,
+	Example: `  conflux sync                                # Sync with change detection and confirmation
+  conflux sync --dry-run                      # Preview changes without syncing  
+  conflux sync --force                        # Skip confirmation prompts
+  conflux sync --no-cache                     # Ignore cache, check all files
   conflux sync -docs ./documentation         # Sync specific directory
-  conflux sync -docs ./docs -dry-run         # Dry run sync
-  conflux sync -space DOCS -v                # Sync to specific space with verbose logging
-  conflux sync -config prod-config.yaml -v   # Sync with custom config file`,
+  conflux sync -space DOCS -v                # Sync to specific space with verbose logging`,
 	RunE: runSync,
 }
 
@@ -55,7 +59,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	syncer := sync.New(cfg, log)
 
-	if err := syncer.Sync(dryRun); err != nil {
+	// Handle no-cache flag
+	if noCache {
+		if err := syncer.ClearCache(); err != nil {
+			log.Debug("Could not clear cache: %v", err)
+		}
+	}
+
+	if err := syncer.Sync(dryRun, force); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
@@ -68,6 +79,8 @@ func init() {
 
 	// Local flags for sync command
 	syncCmd.Flags().BoolVar(&dryRun, "dry-run", false, "perform a dry run without making changes")
+	syncCmd.Flags().BoolVar(&force, "force", false, "skip confirmation prompts and proceed with sync")
+	syncCmd.Flags().BoolVar(&noCache, "no-cache", false, "ignore cached change detection and check all files")
 	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown documents directory")
 	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config file)")
 }
