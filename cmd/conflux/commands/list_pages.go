@@ -110,5 +110,8 @@ func init() {
 	listPagesCmd.Flags().StringVarP(&parentPage, "parent", "p", "", "Parent page title to start from (optional)")
 
 	// Mark space as required
-	listPagesCmd.MarkFlagRequired("space")
+	if err := listPagesCmd.MarkFlagRequired("space"); err != nil {
+		// This should not happen for a valid flag name, but handle it for linter
+		panic(fmt.Sprintf("Failed to mark space flag as required: %v", err))
+	}
 }

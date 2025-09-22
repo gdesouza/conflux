@@ -17,6 +17,7 @@ type PromptChoice struct {
 type UserChoice struct {
 	Action        string // "continue", "cancel", "select"
 	SelectedFiles []string
+	Indices       []int // 0-based indices for file selection
 }
 
 func PromptUser(message string, choices []PromptChoice) string {
@@ -118,7 +119,9 @@ func PromptForFileSelection() UserChoice {
 	}
 
 	return UserChoice{
-		Action: "select",
+		Action:        "select",
+		Indices:       indices,
+		SelectedFiles: make([]string, len(indices)), // Placeholder, will be populated by caller using indices
 		// Note: The actual file paths will be populated by the caller
 		// using these indices
 	}

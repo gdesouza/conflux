@@ -80,7 +80,8 @@ func FindMarkdownFiles(path string, exclude []string) ([]string, error) {
 		}
 
 		// Convert to absolute path
-		absPath, err := filepath.Abs(path)
+		var absPath string
+		absPath, err = filepath.Abs(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 		}
@@ -528,9 +529,7 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 	// Check if we have a pageID for attachment upload
 	if pageID == "" || client == nil {
 		// For new pages or when client is not available, fall back to code block
-		if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
-			// Log cleanup error but continue
-		}
+		_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
 		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
 	}
 
@@ -538,16 +537,12 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 	attachment, err := client.UploadAttachment(pageID, result.ImagePath)
 	if err != nil {
 		// Cleanup temp file and return as code block
-		if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
-			// Log cleanup error but continue with original error
-		}
+		_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
 		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
 	}
 
 	// Cleanup temp file
-	if cleanupErr := processor.Cleanup(result); cleanupErr != nil {
-		// Log cleanup error but continue with successful result
-	}
+	_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
 
 	// Return Confluence image macro
 	return fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, attachment.Filename)

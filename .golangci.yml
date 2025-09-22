@@ -9,6 +9,14 @@ linters-settings:
   misspell:
     locale: US
 
+issues:
+  exclude-rules:
+    # Exclude G204 (subprocess with tainted input) for Mermaid processor - this is intentional
+    - path: internal/mermaid/processor.go
+      linters:
+        - gosec
+      text: "G204:"
+
 linters:
   enable:
     - gci

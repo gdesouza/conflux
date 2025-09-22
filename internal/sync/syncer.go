@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"conflux/internal/config"
 	"conflux/internal/confluence"
 	"conflux/internal/markdown"
@@ -32,7 +35,7 @@ type PageSyncInfo struct {
 
 type Syncer struct {
 	config     *config.Config
-	confluence *confluence.Client
+	confluence confluence.ConfluenceClient
 	logger     *logger.Logger
 	metadata   *SyncMetadata
 }
@@ -55,7 +58,23 @@ func New(cfg *config.Config, log *logger.Logger) *Syncer {
 	}
 }
 
+// NewWithClient creates a syncer with a custom confluence client (useful for testing)
+func NewWithClient(cfg *config.Config, log *logger.Logger, client confluence.ConfluenceClient) *Syncer {
+	metadata := NewSyncMetadata(cfg.Local.MarkdownDir, cfg.Confluence.SpaceKey)
+
+	return &Syncer{
+		config:     cfg,
+		confluence: client,
+		logger:     log,
+		metadata:   metadata,
+	}
+}
+
 func (s *Syncer) Sync(dryRun bool, force bool) error {
+	return s.SyncWithFile(dryRun, force, "")
+}
+
+func (s *Syncer) SyncWithFile(dryRun bool, force bool, singleFilePath string) error {
 	s.logger.Info("Starting sync process...")
 
 	// Load sync metadata cache
@@ -74,12 +93,24 @@ func (s *Syncer) Sync(dryRun bool, force bool) error {
 		s.logger.Info("Mermaid CLI dependencies verified")
 	}
 
-	files, err := markdown.FindMarkdownFiles(s.config.Local.MarkdownDir, s.config.Local.Exclude)
-	if err != nil {
-		return fmt.Errorf("failed to find markdown files: %w", err)
-	}
+	var files []string
+	var err error
 
-	s.logger.Info("Found %d markdown files to analyze", len(files))
+	if singleFilePath != "" {
+		// Single file mode: use FindMarkdownFiles for validation
+		files, err = markdown.FindMarkdownFiles(singleFilePath, []string{})
+		if err != nil {
+			return fmt.Errorf("failed to process file %s: %w", singleFilePath, err)
+		}
+		s.logger.Info("Single file mode: processing %s", singleFilePath)
+	} else {
+		// Directory mode: find all markdown files
+		files, err = markdown.FindMarkdownFiles(s.config.Local.MarkdownDir, s.config.Local.Exclude)
+		if err != nil {
+			return fmt.Errorf("failed to find markdown files: %w", err)
+		}
+		s.logger.Info("Found %d markdown files to analyze", len(files))
+	}
 
 	// Analyze all files and build page hierarchy
 	pages, err := s.analyzeAllFiles(files)
@@ -112,14 +143,14 @@ func (s *Syncer) Sync(dryRun bool, force bool) error {
 		choice := PromptForConfirmation("Sync Preview", changedCount, newCount, upToDateCount)
 		switch choice.Action {
 		case "cancel":
-			fmt.Println("❌ Sync cancelled by user")
+			fmt.Println("❌ Sync canceled by user")
 			return nil
 		case "select":
 			// Display file list for selection
 			_ = DisplayFileList(pages, true)
 			selectionChoice := PromptForFileSelection()
 			if selectionChoice.Action == "cancel" {
-				fmt.Println("❌ Sync cancelled by user")
+				fmt.Println("❌ Sync canceled by user")
 				return nil
 			}
 			// TODO: Implement selective sync based on user selection
@@ -131,72 +162,6 @@ func (s *Syncer) Sync(dryRun bool, force bool) error {
 
 	// Perform the actual sync
 	return s.performEnhancedSync(pages)
-}
-
-func (s *Syncer) performDryRun(files []string) error {
-	var pages []PageSyncInfo
-
-	// First, create directory page info
-	directories := s.extractDirectories(files)
-	for _, dir := range directories {
-		dirName := filepath.Base(dir)
-		title := strings.Title(strings.ReplaceAll(dirName, "-", " "))
-
-		level := strings.Count(dir, string(filepath.Separator))
-
-		pages = append(pages, PageSyncInfo{
-			Title:       title,
-			FilePath:    dir,
-			Status:      StatusNew,
-			Level:       level,
-			IsDirectory: true,
-		})
-	}
-
-	// Then analyze markdown files
-	for _, file := range files {
-		pageInfo, err := s.analyzeFile(file)
-		if err != nil {
-			s.logger.Error("Failed to analyze file %s: %v", file, err)
-			continue
-		}
-		pages = append(pages, pageInfo)
-	}
-
-	// Display the hierarchy
-	s.displayDryRunHierarchy(pages)
-	return nil
-}
-
-func (s *Syncer) performHierarchicalSync(files []string) error {
-	// First, analyze all files and determine directory structure
-	directoryPages := make(map[string]*confluence.Page) // directory path -> page
-
-	// Create directory pages first
-	directories := s.extractDirectories(files)
-	for _, dir := range directories {
-		parentDir := filepath.Dir(dir)
-		if parentDir == "." || parentDir == s.config.Local.MarkdownDir {
-			parentDir = ""
-		}
-
-		page, err := s.createDirectoryPage(dir, parentDir, directoryPages)
-		if err != nil {
-			s.logger.Error("Failed to create directory page for %s: %v", dir, err)
-			continue
-		}
-		directoryPages[dir] = page
-	}
-
-	// Then sync markdown files with proper parent relationships
-	for _, file := range files {
-		if err := s.syncFileWithHierarchy(file, directoryPages); err != nil {
-			s.logger.Error("Failed to sync file %s: %v", file, err)
-			continue
-		}
-	}
-
-	return nil
 }
 
 func (s *Syncer) extractDirectories(files []string) []string {
@@ -250,7 +215,8 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 
 	// Create directory page title from the directory name
 	dirName := filepath.Base(dirPath)
-	title := strings.Title(strings.ReplaceAll(dirName, "-", " "))
+	caser := cases.Title(language.English)
+	title := caser.String(strings.ReplaceAll(dirName, "-", " "))
 
 	s.logger.Info("Creating directory page: %s", title)
 
@@ -286,11 +252,13 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	if existingPage != nil {
 		s.logger.Info("Directory page already exists, updating content: %s", title)
 		// Update the existing directory page with new content
-		updatedPage, err := s.confluence.UpdatePage(existingPage.ID, title, content)
+		var updatedPage *confluence.Page
+		updatedPage, err = s.confluence.UpdatePage(existingPage.ID, title, content)
 		if err != nil {
 			s.logger.Info("Failed to update directory page, will recreate: %s", err)
 		} else {
 			s.logger.Info("Successfully updated directory page: %s (ID: %s)", title, updatedPage.ID)
+			directoryPages[dirPath] = updatedPage
 			return updatedPage, nil
 		}
 	}
@@ -307,273 +275,8 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	}
 
 	s.logger.Info("Successfully created directory page: %s (ID: %s)", title, page.ID)
+	directoryPages[dirPath] = page
 	return page, nil
-}
-
-func (s *Syncer) syncFileWithHierarchy(filePath string, directoryPages map[string]*confluence.Page) error {
-	s.logger.Info("Processing file: %s", filePath)
-
-	doc, err := markdown.ParseFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to parse markdown: %w", err)
-	}
-
-	// Convert content with mermaid support - use empty pageID for new pages
-	confluenceContent := markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, s.confluence, "")
-
-	// Determine parent page based on directory structure
-	relPath, err := filepath.Rel(s.config.Local.MarkdownDir, filePath)
-	if err != nil {
-		relPath = filePath
-	}
-
-	dir := filepath.Dir(relPath)
-	var parentID string
-	if dir != "." {
-		if parentPage, exists := directoryPages[dir]; exists {
-			parentID = parentPage.ID
-		}
-	}
-
-	existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, doc.Title)
-	if err != nil {
-		s.logger.Info("Could not check for existing page (creating new): %s", doc.Title)
-	}
-
-	if existingPage != nil {
-		s.logger.Info("Updating existing page: %s", doc.Title)
-		_, err = s.confluence.UpdatePage(existingPage.ID, doc.Title, confluenceContent)
-	} else {
-		s.logger.Info("Creating new page: %s", doc.Title)
-		if parentID != "" {
-			s.logger.Info("Creating page under parent ID: %s", parentID)
-			_, err = s.confluence.CreatePageWithParent(s.config.Confluence.SpaceKey, doc.Title, confluenceContent, parentID)
-		} else {
-			_, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, doc.Title, confluenceContent)
-		}
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to sync page: %w", err)
-	}
-
-	s.logger.Info("Successfully synced: %s", doc.Title)
-	return nil
-}
-
-func (s *Syncer) analyzeFile(filePath string) (PageSyncInfo, error) {
-	s.logger.Info("Analyzing file: %s", filePath)
-
-	doc, err := markdown.ParseFile(filePath)
-	if err != nil {
-		return PageSyncInfo{}, fmt.Errorf("failed to parse markdown: %w", err)
-	}
-
-	// Check if page exists in Confluence
-	existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, doc.Title)
-	if err != nil {
-		// If we can't connect (like with test credentials), simulate some existing pages for demo
-		s.logger.Info("Cannot connect to Confluence (test mode) - simulating page status for '%s'", doc.Title)
-
-		// Simulate some pages as existing (changed) for demo purposes
-		if strings.Contains(doc.Title, "Getting Started") || strings.Contains(doc.Title, "API Reference") {
-			return PageSyncInfo{
-				Title:    doc.Title,
-				FilePath: filePath,
-				Status:   StatusChanged,
-				Level:    0,
-			}, nil
-		}
-
-		return PageSyncInfo{
-			Title:    doc.Title,
-			FilePath: filePath,
-			Status:   StatusNew,
-			Level:    0,
-		}, nil
-	}
-
-	var status SyncStatus
-	if existingPage != nil {
-		// TODO: In the future, we could compare content to determine if it actually changed
-		status = StatusChanged
-	} else {
-		status = StatusNew
-	}
-
-	return PageSyncInfo{
-		Title:    doc.Title,
-		FilePath: filePath,
-		Status:   status,
-		Level:    0, // We'll calculate this based on directory structure later
-	}, nil
-}
-
-func (s *Syncer) syncFile(filePath string, dryRun bool) error {
-	s.logger.Info("Processing file: %s", filePath)
-
-	doc, err := markdown.ParseFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to parse markdown: %w", err)
-	}
-
-	// Convert content with mermaid support - use empty pageID for new pages
-	confluenceContent := markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, s.confluence, "")
-
-	if dryRun {
-		s.logger.Info("DRY RUN: Would sync page '%s'", doc.Title)
-		return nil
-	}
-
-	existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, doc.Title)
-	if err != nil {
-		return fmt.Errorf("failed to check for existing page: %w", err)
-	}
-
-	if existingPage != nil {
-		s.logger.Info("Updating existing page: %s", doc.Title)
-		_, err = s.confluence.UpdatePage(existingPage.ID, doc.Title, confluenceContent)
-	} else {
-		s.logger.Info("Creating new page: %s", doc.Title)
-		_, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, doc.Title, confluenceContent)
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to sync page: %w", err)
-	}
-
-	s.logger.Info("Successfully synced: %s", doc.Title)
-	return nil
-}
-
-func (s *Syncer) displayDryRunHierarchy(pages []PageSyncInfo) {
-	fmt.Printf("🏢 Space '%s' - Dry Run Preview:\n\n", s.config.Confluence.SpaceKey)
-
-	// Build proper tree structure
-	tree := s.buildPageTree(pages)
-
-	// Display the tree recursively
-	s.printPageTree(tree, 0)
-}
-
-func (s *Syncer) buildPageTree(pages []PageSyncInfo) []PageSyncInfo {
-	// Create maps for organizing pages
-	pageMap := make(map[string]*PageSyncInfo) // path -> page
-	childrenMap := make(map[string][]string)  // parent path -> child paths
-
-	// First, index all pages and determine parent-child relationships
-	for i := range pages {
-		page := &pages[i]
-
-		if page.IsDirectory {
-			// For directory pages, use the directory path as the key
-			pageMap[page.FilePath] = page
-
-			// Determine parent directory for nested directories
-			if strings.Contains(page.FilePath, string(filepath.Separator)) {
-				parentDir := filepath.Dir(page.FilePath)
-				if parentDir != "." {
-					page.ParentPath = parentDir
-					childrenMap[parentDir] = append(childrenMap[parentDir], page.FilePath)
-				}
-			}
-		} else {
-			// For file pages, use the file path as the key
-			pageMap[page.FilePath] = page
-
-			// Determine parent directory for file pages
-			relPath, err := filepath.Rel(s.config.Local.MarkdownDir, page.FilePath)
-			if err != nil {
-				relPath = page.FilePath
-			}
-
-			dir := filepath.Dir(relPath)
-			if dir != "." {
-				page.ParentPath = dir
-				childrenMap[dir] = append(childrenMap[dir], page.FilePath)
-			}
-		}
-	}
-
-	// Build tree recursively
-	var buildChildren func(string) []PageSyncInfo
-	buildChildren = func(parentPath string) []PageSyncInfo {
-		var children []PageSyncInfo
-		if childPaths, exists := childrenMap[parentPath]; exists {
-			for _, childPath := range childPaths {
-				if childPage, exists := pageMap[childPath]; exists {
-					// Create a copy of the child page
-					child := *childPage
-					// Recursively build children for this child
-					child.Children = buildChildren(childPath)
-					children = append(children, child)
-				}
-			}
-		}
-		return children
-	}
-
-	// Find root pages and build their children
-	var rootPages []PageSyncInfo
-	for _, page := range pageMap {
-		if page.ParentPath == "" || pageMap[page.ParentPath] == nil {
-			rootPage := *page
-			rootPage.Children = buildChildren(page.FilePath)
-			rootPages = append(rootPages, rootPage)
-		}
-	}
-
-	return rootPages
-}
-
-func (s *Syncer) printPageTree(pages []PageSyncInfo, level int) {
-	for i, page := range pages {
-		isLast := i == len(pages)-1
-
-		// Build prefix with proper tree formatting
-		prefix := ""
-		for j := 0; j < level; j++ {
-			prefix += "  "
-		}
-		if level > 0 {
-			if isLast {
-				prefix += "└── "
-			} else {
-				prefix += "├── "
-			}
-		}
-
-		// Choose icon based on status and type
-		var icon string
-		var statusText string
-		if page.IsDirectory {
-			icon = "📁" // Directory/folder icon
-			statusText = " (directory page - will be created)"
-		} else {
-			switch page.Status {
-			case StatusNew:
-				icon = "🆕" // New page
-				statusText = " (new page)"
-			case StatusChanged:
-				icon = "📝" // Changed/updated page
-				statusText = " (will be updated)"
-			case StatusUpToDate:
-				icon = "✅" // Up to date
-				statusText = " (up to date)"
-			default:
-				icon = "📄" // Default
-				statusText = ""
-			}
-		}
-
-		// Print the page
-		fmt.Printf("%s%s %s%s\n", prefix, icon, page.Title, statusText)
-
-		// Recursively print children
-		if len(page.Children) > 0 {
-			s.printPageTree(page.Children, level+1)
-		}
-	}
 }
 
 func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
@@ -583,7 +286,8 @@ func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
 	directories := s.extractDirectories(files)
 	for _, dir := range directories {
 		dirName := filepath.Base(dir)
-		title := strings.Title(strings.ReplaceAll(dirName, "-", " "))
+		caser := cases.Title(language.English)
+		title := caser.String(strings.ReplaceAll(dirName, "-", " "))
 		level := strings.Count(dir, string(filepath.Separator))
 
 		pages = append(pages, PageSyncInfo{
@@ -668,6 +372,76 @@ func (s *Syncer) displayEnhancedHierarchy(pages []PageSyncInfo, newCount, change
 	}
 }
 
+func (s *Syncer) buildPageTree(pages []PageSyncInfo) []PageSyncInfo {
+	// Create maps for organizing pages
+	pageMap := make(map[string]*PageSyncInfo) // path -> page
+	childrenMap := make(map[string][]string)  // parent path -> child paths
+
+	// First, index all pages and determine parent-child relationships
+	for i := range pages {
+		page := &pages[i]
+
+		if page.IsDirectory {
+			// For directory pages, use the directory path as the key
+			pageMap[page.FilePath] = page
+
+			// Determine parent directory for nested directories
+			if strings.Contains(page.FilePath, string(filepath.Separator)) {
+				parentDir := filepath.Dir(page.FilePath)
+				if parentDir != "." {
+					page.ParentPath = parentDir
+					childrenMap[parentDir] = append(childrenMap[parentDir], page.FilePath)
+				}
+			}
+		} else {
+			// For file pages, use the file path as the key
+			pageMap[page.FilePath] = page
+
+			// Determine parent directory for file pages
+			relPath, err := filepath.Rel(s.config.Local.MarkdownDir, page.FilePath)
+			if err != nil {
+				relPath = page.FilePath
+			}
+
+			dir := filepath.Dir(relPath)
+			if dir != "." {
+				page.ParentPath = dir
+				childrenMap[dir] = append(childrenMap[dir], page.FilePath)
+			}
+		}
+	}
+
+	// Build tree recursively
+	var buildChildren func(string) []PageSyncInfo
+	buildChildren = func(parentPath string) []PageSyncInfo {
+		var children []PageSyncInfo
+		if childPaths, exists := childrenMap[parentPath]; exists {
+			for _, childPath := range childPaths {
+				if childPage, exists := pageMap[childPath]; exists {
+					// Create a copy of the child page
+					child := *childPage
+					// Recursively build children for this child
+					child.Children = buildChildren(childPath)
+					children = append(children, child)
+				}
+			}
+		}
+		return children
+	}
+
+	// Find root pages and build their children
+	var rootPages []PageSyncInfo
+	for _, page := range pageMap {
+		if page.ParentPath == "" || pageMap[page.ParentPath] == nil {
+			rootPage := *page
+			rootPage.Children = buildChildren(page.FilePath)
+			rootPages = append(rootPages, rootPage)
+		}
+	}
+
+	return rootPages
+}
+
 func (s *Syncer) printEnhancedPageTree(pages []PageSyncInfo, level int) {
 	for i, page := range pages {
 		isLast := i == len(pages)-1
@@ -711,10 +485,14 @@ func (s *Syncer) printEnhancedPageTree(pages []PageSyncInfo, level int) {
 		if page.IsDirectory {
 			fmt.Printf("%s%s %s%s\n", prefix, icon, page.Title, statusText)
 		} else {
-			relPath, _ := filepath.Rel(s.config.Local.MarkdownDir, page.FilePath)
+			relPath, err := filepath.Rel(s.config.Local.MarkdownDir, page.FilePath)
+			if err != nil {
+				// Fallback to filename if relative path calculation fails
+				relPath = filepath.Base(page.FilePath)
+			}
 			fmt.Printf("%s%s %s%s\n", prefix, icon, page.Title, statusText)
 			if level == 0 {
-				fmt.Printf("%s    📂 %s\n", prefix, relPath)
+				fmt.Printf("%s    %s %s\n", prefix, icon, relPath)
 			}
 		}
 
@@ -801,7 +579,12 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 
 	// Convert content with mermaid support
 	pageID := s.metadata.GetPageID(filePath)
-	confluenceContent := markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, s.confluence, pageID)
+	var confluenceContent string
+	if concreteClient, ok := s.confluence.(*confluence.Client); ok {
+		confluenceContent = markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, concreteClient, pageID)
+	} else {
+		confluenceContent = markdown.ConvertToConfluenceFormat(doc.Content)
+	}
 
 	// Determine parent page based on directory structure
 	relPath, err := filepath.Rel(s.config.Local.MarkdownDir, filePath)
@@ -826,6 +609,42 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 	if existingPage != nil {
 		s.logger.Info("Updating existing page: %s", doc.Title)
 		page, err = s.confluence.UpdatePage(existingPage.ID, doc.Title, confluenceContent)
+
+		// Handle archived/restricted page (403 error) by creating a new page
+		if confluence.IsPageUpdateForbidden(err) {
+			s.logger.Info("Page appears to be archived or restricted, creating new page: %s", doc.Title)
+
+			// Clear the cached page ID for this file to avoid future conflicts
+			s.metadata.RemoveFileMetadata(filePath)
+
+			// Try with original title first, then with suffix if title conflicts
+			newTitle := doc.Title
+			attempt := 0
+			for attempt < 10 { // Limit attempts to prevent infinite loop
+				if attempt > 0 {
+					newTitle = fmt.Sprintf("%s (v%d)", doc.Title, attempt+1)
+				}
+
+				// Retry as a new page creation
+				if parentID != "" {
+					page, err = s.confluence.CreatePageWithParent(s.config.Confluence.SpaceKey, newTitle, confluenceContent, parentID)
+				} else {
+					page, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, newTitle, confluenceContent)
+				}
+
+				// If successful or error is not title conflict, break
+				if err == nil || !strings.Contains(err.Error(), "already exists with the same TITLE") {
+					break
+				}
+
+				attempt++
+				s.logger.Debug("Title '%s' already exists, trying: %s", doc.Title, newTitle)
+			}
+
+			if err == nil {
+				s.logger.Info("Successfully created new page to replace archived page: %s", newTitle)
+			}
+		}
 	} else {
 		s.logger.Info("Creating new page: %s", doc.Title)
 		if parentID != "" {
@@ -873,7 +692,12 @@ func (s *Syncer) postProcessMermaidDiagrams(pageID, content string) error {
 	s.logger.Debug("Post-processing Mermaid diagrams for page ID: %s", pageID)
 
 	// Re-convert content with the actual pageID for Mermaid processing
-	updatedContent := markdown.ConvertToConfluenceFormatWithMermaid(content, s.config, s.confluence, pageID)
+	var updatedContent string
+	if concreteClient, ok := s.confluence.(*confluence.Client); ok {
+		updatedContent = markdown.ConvertToConfluenceFormatWithMermaid(content, s.config, concreteClient, pageID)
+	} else {
+		updatedContent = markdown.ConvertToConfluenceFormat(content)
+	}
 
 	// Get current page info to preserve title
 	page, err := s.confluence.GetPage(pageID)

@@ -3,6 +3,7 @@ package confluence
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -14,6 +15,23 @@ import (
 
 	"conflux/pkg/logger"
 )
+
+// PageUpdateForbiddenError indicates a page exists but cannot be updated (likely archived)
+type PageUpdateForbiddenError struct {
+	PageID string
+	Title  string
+	Msg    string
+}
+
+func (e *PageUpdateForbiddenError) Error() string {
+	return e.Msg
+}
+
+// IsPageUpdateForbidden checks if an error is a PageUpdateForbiddenError
+func IsPageUpdateForbidden(err error) bool {
+	var forbiddenErr *PageUpdateForbiddenError
+	return errors.As(err, &forbiddenErr)
+}
 
 type Client struct {
 	baseURL  string
@@ -230,6 +248,13 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusForbidden {
+			return nil, &PageUpdateForbiddenError{
+				PageID: pageID,
+				Title:  title,
+				Msg:    fmt.Sprintf("API request failed with status %d: %s", resp.StatusCode, body),
+			}
+		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 	}
 
@@ -312,7 +337,8 @@ func (c *Client) GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageInfo,
 
 	if parentPageTitle != "" {
 		// Find the parent page first
-		parentPage, err := c.FindPageByTitle(spaceKey, parentPageTitle)
+		var parentPage *Page
+		parentPage, err = c.FindPageByTitle(spaceKey, parentPageTitle)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find parent page '%s': %w", parentPageTitle, err)
 		}
@@ -508,13 +534,13 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
 
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	if _, copyErr := io.Copy(part, file); copyErr != nil {
+		return nil, fmt.Errorf("failed to copy file content: %w", copyErr)
 	}
 
 	// Close the multipart writer
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	if closeErr := writer.Close(); closeErr != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", closeErr)
 	}
 
 	// Create request

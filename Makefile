@@ -1,4 +1,4 @@
-.PHONY: build test lint clean run install uninstall version-major version-minor version-patch version-show version-help
+.PHONY: build test coverage lint clean run install uninstall version-major version-minor version-patch version-show version-help
 
 BINARY_NAME=conflux
 BIN_DIR=bin
@@ -17,13 +17,28 @@ build:
 	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/conflux
 
 test:
-	go test ./...
+	@echo "Running tests with coverage..."
+	@go test -coverprofile=coverage.out ./...
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@go tool cover -func=coverage.out | tail -1
+	@echo ""
+	@echo "💡 For detailed coverage report, run: go tool cover -html=coverage.out"
+
+coverage:
+	@echo "Generating detailed coverage report..."
+	@go test -coverprofile=coverage.out ./...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "📊 Coverage report generated: coverage.html"
+	@echo "📈 Overall coverage:"
+	@go tool cover -func=coverage.out | tail -1
 
 lint:
 	golangci-lint run
 
 clean:
 	rm -rf $(BIN_DIR)
+	rm -f coverage.out coverage.html
 
 install: build
 	sudo cp $(BIN_DIR)/$(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)

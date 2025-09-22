@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +34,7 @@ to track file changes and only updates pages that have actually been modified.`,
   conflux sync --force                        # Skip confirmation prompts
   conflux sync --no-cache                     # Ignore cache, check all files
   conflux sync -docs ./documentation         # Sync specific directory
+  conflux sync -docs ./docs/readme.md        # Sync single markdown file
   conflux sync -space DOCS -v                # Sync to specific space with verbose logging`,
 	RunE: runSync,
 }
@@ -45,7 +48,23 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Override config markdown directory with CLI flag
-	cfg.Local.MarkdownDir = docsDir
+	// Handle single file vs directory logic
+	var singleFilePath string
+	if docsDir != "." {
+		info, err := os.Stat(docsDir)
+		if err != nil {
+			return fmt.Errorf("failed to access path %s: %w", docsDir, err)
+		}
+
+		if !info.IsDir() {
+			// Single file: set MarkdownDir to the parent directory and store the full file path
+			cfg.Local.MarkdownDir = filepath.Dir(docsDir)
+			singleFilePath = docsDir
+		} else {
+			// Directory: use as-is
+			cfg.Local.MarkdownDir = docsDir
+		}
+	}
 
 	// Override space key if provided via CLI flag
 	if spaceKey != "" {
@@ -66,7 +85,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := syncer.Sync(dryRun, force); err != nil {
+	if err := syncer.SyncWithFile(dryRun, force, singleFilePath); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
@@ -81,6 +100,6 @@ func init() {
 	syncCmd.Flags().BoolVar(&dryRun, "dry-run", false, "perform a dry run without making changes")
 	syncCmd.Flags().BoolVar(&force, "force", false, "skip confirmation prompts and proceed with sync")
 	syncCmd.Flags().BoolVar(&noCache, "no-cache", false, "ignore cached change detection and check all files")
-	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown documents directory")
+	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown directory or single .md file")
 	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config file)")
 }

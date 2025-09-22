@@ -71,7 +71,7 @@ func (sm *SyncMetadata) Save() error {
 		return fmt.Errorf("failed to marshal sync cache: %w", err)
 	}
 
-	if err := os.WriteFile(sm.cacheFile, data, 0644); err != nil {
+	if err := os.WriteFile(sm.cacheFile, data, 0600); err != nil {
 		return fmt.Errorf("failed to write sync cache: %w", err)
 	}
 
