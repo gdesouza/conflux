@@ -555,6 +555,6 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 	// Cleanup temp file
 	_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
 
-	// Return Confluence image macro with proper filename reference
-	return fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
+	// Return Confluence image macro with full page width
+	return fmt.Sprintf(`<ac:image ac:width="100%%"><ri:attachment ri:filename="%s"/></ac:image>`, filename)
 }

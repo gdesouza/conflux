@@ -26,10 +26,13 @@ type LocalConfig struct {
 }
 
 type MermaidConfig struct {
-	Mode    string `yaml:"mode"`     // "preserve" or "convert-to-image"
-	Format  string `yaml:"format"`   // "svg", "png", "pdf"
-	CLIPath string `yaml:"cli_path"` // path to mermaid CLI executable
-	Theme   string `yaml:"theme"`    // mermaid theme
+	Mode    string  `yaml:"mode"`     // "preserve" or "convert-to-image"
+	Format  string  `yaml:"format"`   // "svg", "png", "pdf"
+	CLIPath string  `yaml:"cli_path"` // path to mermaid CLI executable
+	Theme   string  `yaml:"theme"`    // mermaid theme
+	Width   int     `yaml:"width"`    // image width in pixels
+	Height  int     `yaml:"height"`   // image height in pixels
+	Scale   float64 `yaml:"scale"`    // puppeteer scale factor for higher resolution
 }
 
 func Load(path string) (*Config, error) {
@@ -65,6 +68,15 @@ func (c *Config) setMermaidDefaults() {
 	}
 	if c.Mermaid.Theme == "" {
 		c.Mermaid.Theme = "default"
+	}
+	if c.Mermaid.Width == 0 {
+		c.Mermaid.Width = 1200 // Increased from default 800 for larger diagrams
+	}
+	if c.Mermaid.Height == 0 {
+		c.Mermaid.Height = 800 // Increased from default 600 for larger diagrams
+	}
+	if c.Mermaid.Scale == 0 {
+		c.Mermaid.Scale = 2.0 // 2x scale for higher resolution (default is 1)
 	}
 }
 

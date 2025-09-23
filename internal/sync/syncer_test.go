@@ -584,8 +584,9 @@ func TestSyncer_CreateDirectoryPage(t *testing.T) {
 	syncer, mockClient, _ := setupSyncerTest(t)
 
 	directoryPages := make(map[string]*confluence.Page)
+	testFiles := []string{"docs/test.md", "docs/guide.md"}
 
-	page, err := syncer.createDirectoryPage("docs", "", directoryPages)
+	page, err := syncer.createDirectoryPage("docs", "", directoryPages, StatusNew, testFiles)
 	if err != nil {
 		t.Fatalf("Failed to create directory page: %v", err)
 	}
@@ -622,8 +623,9 @@ func TestSyncer_CreateDirectoryPage_ExistingPage(t *testing.T) {
 	mockClient.pages["Docs"] = existingPage
 
 	directoryPages := make(map[string]*confluence.Page)
+	testFiles := []string{"docs/test.md", "docs/guide.md"}
 
-	page, err := syncer.createDirectoryPage("docs", "", directoryPages)
+	page, err := syncer.createDirectoryPage("docs", "", directoryPages, StatusChanged, testFiles)
 	if err != nil {
 		t.Fatalf("Failed to update existing directory page: %v", err)
 	}
@@ -640,6 +642,78 @@ func TestSyncer_CreateDirectoryPage_ExistingPage(t *testing.T) {
 
 	if strings.Contains(updatedPage.Body.Storage.Value, "old directory content") {
 		t.Error("Expected old content to be replaced")
+	}
+}
+
+func TestSyncer_CreateDirectoryPage_UpToDate(t *testing.T) {
+	syncer, mockClient, _ := setupSyncerTest(t)
+
+	// Add existing directory page
+	existingPage := &confluence.Page{
+		ID:    "existing-dir-1",
+		Title: "Docs",
+	}
+	existingPage.Body.Storage.Value = "existing directory content"
+	mockClient.pages["Docs"] = existingPage
+
+	// Mock metadata to return up-to-date status
+	syncer.metadata.UpdateDirectoryMetadata("docs", "existing-dir-1", "Docs", []string{"docs/test.md"})
+
+	directoryPages := make(map[string]*confluence.Page)
+	testFiles := []string{"docs/test.md"}
+
+	page, err := syncer.createDirectoryPage("docs", "", directoryPages, StatusUpToDate, testFiles)
+	if err != nil {
+		t.Fatalf("Failed to handle up-to-date directory page: %v", err)
+	}
+
+	// Should return the existing page without creating/updating
+	if page.ID != "existing-dir-1" {
+		t.Errorf("Expected to return existing page with ID 'existing-dir-1', got %q", page.ID)
+	}
+
+	// Verify page was cached
+	if directoryPages["docs"] != page {
+		t.Error("Expected directory page to be cached")
+	}
+}
+
+func TestSyncer_DirectoryStatusDetection(t *testing.T) {
+	syncer, _, tempDir := setupSyncerTest(t)
+
+	// Create test files
+	testDir := filepath.Join(tempDir, "test-dir")
+	os.MkdirAll(testDir, 0755)
+
+	testFile1 := filepath.Join(testDir, "file1.md")
+	testFile2 := filepath.Join(testDir, "file2.md")
+
+	os.WriteFile(testFile1, []byte("# File 1"), 0600)
+	os.WriteFile(testFile2, []byte("# File 2"), 0600)
+
+	files := []string{testFile1, testFile2}
+
+	// Test: New directory should return StatusNew
+	status := syncer.metadata.GetDirectoryStatus("test-dir", files)
+	if status != StatusNew {
+		t.Errorf("Expected StatusNew for new directory, got %v", status)
+	}
+
+	// Test: After updating metadata, should return StatusUpToDate
+	syncer.metadata.UpdateDirectoryMetadata("test-dir", "test-page-id", "Test Dir", files)
+	status = syncer.metadata.GetDirectoryStatus("test-dir", files)
+	if status != StatusUpToDate {
+		t.Errorf("Expected StatusUpToDate for unchanged directory, got %v", status)
+	}
+
+	// Test: After adding a new file, should return StatusChanged
+	testFile3 := filepath.Join(testDir, "file3.md")
+	os.WriteFile(testFile3, []byte("# File 3"), 0600)
+	filesWithNew := append(files, testFile3)
+
+	status = syncer.metadata.GetDirectoryStatus("test-dir", filesWithNew)
+	if status != StatusChanged {
+		t.Errorf("Expected StatusChanged for directory with new files, got %v", status)
 	}
 }
 

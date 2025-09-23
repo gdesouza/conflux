@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -19,11 +20,19 @@ type FileMetadata struct {
 	Size     int64     `json:"size"`
 }
 
+type DirectoryMetadata struct {
+	Hash     string    `json:"hash"`
+	LastSync time.Time `json:"last_sync"`
+	PageID   string    `json:"page_id,omitempty"`
+	Title    string    `json:"title"`
+}
+
 type SyncMetadata struct {
-	Files       map[string]FileMetadata `json:"files"`
-	LastSync    time.Time               `json:"last_sync"`
-	SpaceKey    string                  `json:"space_key"`
-	Version     string                  `json:"version"`
+	Files       map[string]FileMetadata      `json:"files"`
+	Directories map[string]DirectoryMetadata `json:"directories"`
+	LastSync    time.Time                    `json:"last_sync"`
+	SpaceKey    string                       `json:"space_key"`
+	Version     string                       `json:"version"`
 	cacheDir    string
 	cacheFile   string
 	markdownDir string
@@ -35,6 +44,7 @@ func NewSyncMetadata(markdownDir, spaceKey string) *SyncMetadata {
 
 	return &SyncMetadata{
 		Files:       make(map[string]FileMetadata),
+		Directories: make(map[string]DirectoryMetadata),
 		SpaceKey:    spaceKey,
 		Version:     "1.0",
 		cacheDir:    cacheDir,
@@ -197,5 +207,68 @@ func (sm *SyncMetadata) GetCachedFiles() []string {
 
 func (sm *SyncMetadata) ClearCache() error {
 	sm.Files = make(map[string]FileMetadata)
+	sm.Directories = make(map[string]DirectoryMetadata)
 	return sm.Save()
+}
+
+// CalculateDirectoryHash calculates a hash for a directory based on its markdown files
+func (sm *SyncMetadata) CalculateDirectoryHash(dirPath string, files []string) string {
+	hash := sha256.New()
+	hash.Write([]byte(dirPath))
+
+	// Include all files in this directory in the hash
+	for _, file := range files {
+		relPath, err := filepath.Rel(sm.markdownDir, file)
+		if err != nil {
+			continue
+		}
+
+		fileDir := filepath.Dir(relPath)
+		if fileDir == dirPath || (dirPath == "." && fileDir == ".") {
+			hash.Write([]byte(file))
+		} else if strings.HasPrefix(fileDir, dirPath+string(filepath.Separator)) {
+			hash.Write([]byte(file))
+		}
+	}
+
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+// GetDirectoryStatus determines if a directory needs stub page creation
+func (sm *SyncMetadata) GetDirectoryStatus(dirPath string, files []string) SyncStatus {
+	currentHash := sm.CalculateDirectoryHash(dirPath, files)
+
+	if metadata, exists := sm.Directories[dirPath]; exists {
+		if metadata.Hash == currentHash {
+			return StatusUpToDate
+		}
+		return StatusChanged
+	}
+
+	return StatusNew
+}
+
+// UpdateDirectoryMetadata updates the cached metadata for a directory
+func (sm *SyncMetadata) UpdateDirectoryMetadata(dirPath, pageID, title string, files []string) {
+	hash := sm.CalculateDirectoryHash(dirPath, files)
+
+	sm.Directories[dirPath] = DirectoryMetadata{
+		Hash:     hash,
+		LastSync: time.Now(),
+		PageID:   pageID,
+		Title:    title,
+	}
+}
+
+// RemoveDirectoryMetadata removes cached metadata for a directory
+func (sm *SyncMetadata) RemoveDirectoryMetadata(dirPath string) {
+	delete(sm.Directories, dirPath)
+}
+
+// GetDirectoryPageID returns the cached page ID for a directory
+func (sm *SyncMetadata) GetDirectoryPageID(dirPath string) string {
+	if metadata, exists := sm.Directories[dirPath]; exists {
+		return metadata.PageID
+	}
+	return ""
 }

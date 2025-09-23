@@ -30,3 +30,22 @@ build/
 
 # Test documentation
 test-docs/
+
+# Terraform files
+*.tfstate
+*.tfstate.backup
+*.terraform.lock.hcl
+.terraform/
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

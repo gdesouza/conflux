@@ -148,6 +148,19 @@ func (p *Processor) executeMermaidCLI(inputFile, outputFile string) error {
 		args = append(args, "-t", p.config.Theme)
 	}
 
+	// Add width and height for larger diagrams
+	if p.config.Width > 0 {
+		args = append(args, "-w", fmt.Sprintf("%d", p.config.Width))
+	}
+	if p.config.Height > 0 {
+		args = append(args, "-H", fmt.Sprintf("%d", p.config.Height))
+	}
+
+	// Add scale factor for higher resolution
+	if p.config.Scale > 0 {
+		args = append(args, "-s", fmt.Sprintf("%.1f", p.config.Scale))
+	}
+
 	cmd := exec.Command(p.config.CLIPath, args...)
 
 	// Capture both stdout and stderr
@@ -207,6 +220,11 @@ func ValidateContent(content string) error {
 		"sankey-beta",
 		"xychart-beta",
 		"requirementDiagram",
+		"C4Context",
+		"C4Container",
+		"C4Component",
+		"C4Dynamic",
+		"C4Deployment",
 	}
 
 	for _, starter := range validStarters {

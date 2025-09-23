@@ -561,6 +561,17 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// Check if this is a duplicate filename error
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(body), "same file name as an existing attachment") {
+			// Try to find the existing attachment with this filename
+			attachment, findErr := c.findAttachmentByFilename(pageID, filename)
+			if findErr == nil && attachment != nil {
+				if c.logger != nil {
+					c.logger.Debug("Found existing attachment '%s' for page ID '%s'", filename, pageID)
+				}
+				return attachment, nil
+			}
+		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 	}
 
@@ -581,6 +592,44 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 	}
 
 	return &result.Results[0], nil
+}
+
+// findAttachmentByFilename looks for an existing attachment with the given filename on a page
+func (c *Client) findAttachmentByFilename(pageID, filename string) (*Attachment, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"/child/attachment", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Results []Attachment `json:"results"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Look for attachment with matching filename
+	for _, attachment := range result.Results {
+		if attachment.Title == filename {
+			return &attachment, nil
+		}
+	}
+
+	return nil, fmt.Errorf("attachment with filename '%s' not found", filename)
 }
 
 func (c *Client) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {

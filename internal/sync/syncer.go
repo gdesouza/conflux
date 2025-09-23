@@ -208,10 +208,33 @@ func (s *Syncer) extractDirectories(files []string) []string {
 	return directories
 }
 
-func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPages map[string]*confluence.Page) (*confluence.Page, error) {
-	// Check if directory page already exists
+func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPages map[string]*confluence.Page, status SyncStatus, files []string) (*confluence.Page, error) {
+	// Check if directory page already exists in our cache
 	if page, exists := directoryPages[dirPath]; exists {
 		return page, nil
+	}
+
+	// Skip creation if directory is up-to-date
+	if status == StatusUpToDate {
+		s.logger.Debug("Directory page is up-to-date, skipping: %s", dirPath)
+
+		// Try to get existing page from Confluence using cached page ID
+		if pageID := s.metadata.GetDirectoryPageID(dirPath); pageID != "" {
+			if existingPage, err := s.confluence.GetPage(pageID); err == nil {
+				directoryPages[dirPath] = existingPage
+				return existingPage, nil
+			}
+		}
+
+		// Fallback: try to find by title
+		dirName := filepath.Base(dirPath)
+		caser := cases.Title(language.English)
+		title := caser.String(strings.ReplaceAll(dirName, "-", " "))
+
+		if existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, title); err == nil && existingPage != nil {
+			directoryPages[dirPath] = existingPage
+			return existingPage, nil
+		}
 	}
 
 	// Create directory page title from the directory name
@@ -219,7 +242,7 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	caser := cases.Title(language.English)
 	title := caser.String(strings.ReplaceAll(dirName, "-", " "))
 
-	s.logger.Info("Creating directory page: %s", title)
+	s.logger.Info("Creating directory page: %s (status: %s)", title, status)
 
 	// Enhanced content for directory page with child items display
 	content := fmt.Sprintf(`<h1>%s</h1>
@@ -260,6 +283,8 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 		} else {
 			s.logger.Info("Successfully updated directory page: %s (ID: %s)", title, updatedPage.ID)
 			directoryPages[dirPath] = updatedPage
+			// Update directory metadata
+			s.metadata.UpdateDirectoryMetadata(dirPath, updatedPage.ID, title, files)
 			return updatedPage, nil
 		}
 	}
@@ -277,13 +302,17 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 
 	s.logger.Info("Successfully created directory page: %s (ID: %s)", title, page.ID)
 	directoryPages[dirPath] = page
+
+	// Update directory metadata
+	s.metadata.UpdateDirectoryMetadata(dirPath, page.ID, title, files)
+
 	return page, nil
 }
 
 func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
 	var pages []PageSyncInfo
 
-	// First, create directory page info
+	// First, create directory page info with change detection
 	directories := s.extractDirectories(files)
 	for _, dir := range directories {
 		dirName := filepath.Base(dir)
@@ -291,10 +320,13 @@ func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
 		title := caser.String(strings.ReplaceAll(dirName, "-", " "))
 		level := strings.Count(dir, string(filepath.Separator))
 
+		// Check if directory needs stub page creation
+		status := s.metadata.GetDirectoryStatus(dir, files)
+
 		pages = append(pages, PageSyncInfo{
 			Title:       title,
 			FilePath:    dir,
-			Status:      StatusNew, // Directory pages are always considered new for simplicity
+			Status:      status,
 			Level:       level,
 			IsDirectory: true,
 		})
@@ -509,6 +541,20 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 
 	var syncedCount, skippedCount, errorCount int
 
+	// Build a map of page info for easy lookup
+	pageInfoMap := make(map[string]PageSyncInfo)
+	for _, page := range pages {
+		pageInfoMap[page.FilePath] = page
+	}
+
+	// Extract all files for directory hash calculation
+	var allFiles []string
+	for _, page := range pages {
+		if !page.IsDirectory {
+			allFiles = append(allFiles, page.FilePath)
+		}
+	}
+
 	// First create directory pages
 	directoryPages := make(map[string]*confluence.Page)
 	for _, page := range pages {
@@ -523,7 +569,21 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 			parentDir = ""
 		}
 
-		confluencePage, err := s.createDirectoryPage(dirPath, parentDir, directoryPages)
+		// Skip if directory is up-to-date
+		if page.Status == StatusUpToDate {
+			s.logger.Debug("Skipping up-to-date directory: %s", dirPath)
+
+			// Still need to load the page for parent-child relationships
+			if pageID := s.metadata.GetDirectoryPageID(dirPath); pageID != "" {
+				if existingPage, err := s.confluence.GetPage(pageID); err == nil {
+					directoryPages[dirPath] = existingPage
+				}
+			}
+			skippedCount++
+			continue
+		}
+
+		confluencePage, err := s.createDirectoryPage(dirPath, parentDir, directoryPages, page.Status, allFiles)
 		if err != nil {
 			s.logger.Error("Failed to create directory page for %s: %v", dirPath, err)
 			errorCount++
