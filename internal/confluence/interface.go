@@ -8,6 +8,9 @@ type ConfluenceClient interface {
 	FindPageByTitle(spaceKey, title string) (*Page, error)
 	GetPage(pageID string) (*Page, error)
 	UploadAttachment(pageID, filePath string) (*Attachment, error)
+	GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageInfo, error)
+	GetPageAncestors(pageID string) ([]PageInfo, error)
+	GetChildPages(pageID string) ([]PageInfo, error)
 }
 
 // Ensure Client implements the interface

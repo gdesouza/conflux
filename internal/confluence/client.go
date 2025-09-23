@@ -682,3 +682,42 @@ func containsDirectoryKeywords(content string) bool {
 		strings.Contains(content, "directory") ||
 		strings.Contains(content, "organize")
 }
+
+// GetChildPages returns all child pages of a given page
+func (c *Client) GetChildPages(pageID string) ([]PageInfo, error) {
+	return c.getChildPages(pageID)
+}
+
+// GetPageAncestors returns the ancestor chain for a page
+func (c *Client) GetPageAncestors(pageID string) ([]PageInfo, error) {
+	params := url.Values{}
+	params.Add("expand", "ancestors")
+
+	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.SetBasicAuth(c.username, c.apiToken)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Ancestors []PageInfo `json:"ancestors"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Ancestors, nil
+}

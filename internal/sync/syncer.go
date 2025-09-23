@@ -72,10 +72,10 @@ func NewWithClient(cfg *config.Config, log *logger.Logger, client confluence.Con
 }
 
 func (s *Syncer) Sync(dryRun bool, force bool) error {
-	return s.SyncWithFile(dryRun, force, "")
+	return s.SyncWithFile(dryRun, force, false, "")
 }
 
-func (s *Syncer) SyncWithFile(dryRun bool, force bool, singleFilePath string) error {
+func (s *Syncer) SyncWithFile(dryRun bool, force bool, forceStubs bool, singleFilePath string) error {
 	s.logger.Info("Starting sync process...")
 
 	// Load sync metadata cache
@@ -114,7 +114,7 @@ func (s *Syncer) SyncWithFile(dryRun bool, force bool, singleFilePath string) er
 	}
 
 	// Analyze all files and build page hierarchy
-	pages, err := s.analyzeAllFiles(files)
+	pages, err := s.analyzeAllFiles(files, forceStubs)
 	if err != nil {
 		return fmt.Errorf("failed to analyze files: %w", err)
 	}
@@ -218,20 +218,11 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	if status == StatusUpToDate {
 		s.logger.Debug("Directory page is up-to-date, skipping: %s", dirPath)
 
-		// Try to get existing page from Confluence using cached page ID
-		if pageID := s.metadata.GetDirectoryPageID(dirPath); pageID != "" {
-			if existingPage, err := s.confluence.GetPage(pageID); err == nil {
-				directoryPages[dirPath] = existingPage
-				return existingPage, nil
-			}
-		}
-
-		// Fallback: try to find by title
+		// Use enhanced fallback lookup
 		dirName := filepath.Base(dirPath)
-		caser := cases.Title(language.English)
-		title := caser.String(strings.ReplaceAll(dirName, "-", " "))
+		cachedPageID := s.metadata.GetDirectoryPageID(dirPath)
 
-		if existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, title); err == nil && existingPage != nil {
+		if existingPage, err := s.findPageWithFallback(dirName, cachedPageID); err == nil && existingPage != nil {
 			directoryPages[dirPath] = existingPage
 			return existingPage, nil
 		}
@@ -267,24 +258,46 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 		}
 	}
 
-	// Check if the directory page already exists in Confluence
-	existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, title)
+	// Check if the directory page already exists in Confluence using enhanced fallback
+	// Use cached page ID to properly find renamed pages
+	cachedPageID := s.metadata.GetDirectoryPageID(dirPath)
+	existingPage, err := s.findPageWithFallback(title, cachedPageID)
 	if err != nil {
 		s.logger.Info("Could not check for existing directory page (creating new): %s", title)
 	}
 
 	if existingPage != nil {
-		s.logger.Info("Directory page already exists, updating content: %s", title)
-		// Update the existing directory page with new content
+		s.logger.Info("Directory page already exists (ID: %s), updating content: %s", existingPage.ID, existingPage.Title)
+		s.logger.Debug("Existing page content length: %d bytes", len(existingPage.Body.Storage.Value))
+		s.logger.Debug("New stub content length: %d bytes", len(content))
+		
+		// Use the existing page's current title instead of the generated title to preserve user renames
+		actualTitle := existingPage.Title
+		s.logger.Debug("Using existing page title '%s' instead of generated title '%s'", actualTitle, title)
+		
+		// Update content with the actual page title
+		content = fmt.Sprintf(`<h1>%s</h1>
+<p>This section contains documentation for %s. The pages below are automatically listed and updated whenever child pages are added or modified.</p>
+
+<h2>Contents</h2>
+<ac:structured-macro ac:name="children" ac:schema-version="1">
+<ac:parameter ac:name="all">true</ac:parameter>
+<ac:parameter ac:name="sort">title</ac:parameter>
+</ac:structured-macro>
+
+<p><em>This page was automatically created by <a href="https://github.com/gdesouza/conflux">Conflux</a> to organize documentation hierarchy.</em></p>`, actualTitle, dirName)
+		
+		// Update the existing directory page with new content (preserve the existing title)
+		s.logger.Debug("Attempting to update page ID: %s with new content", existingPage.ID)
 		var updatedPage *confluence.Page
-		updatedPage, err = s.confluence.UpdatePage(existingPage.ID, title, content)
+		updatedPage, err = s.confluence.UpdatePage(existingPage.ID, actualTitle, content)
 		if err != nil {
 			s.logger.Info("Failed to update directory page, will recreate: %s", err)
 		} else {
-			s.logger.Info("Successfully updated directory page: %s (ID: %s)", title, updatedPage.ID)
+			s.logger.Info("Successfully updated directory page: %s (ID: %s)", actualTitle, updatedPage.ID)
 			directoryPages[dirPath] = updatedPage
-			// Update directory metadata
-			s.metadata.UpdateDirectoryMetadata(dirPath, updatedPage.ID, title, files)
+			// Update directory metadata with the actual title from Confluence
+			s.metadata.UpdateDirectoryMetadata(dirPath, updatedPage.ID, actualTitle, files)
 			return updatedPage, nil
 		}
 	}
@@ -309,7 +322,7 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 	return page, nil
 }
 
-func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
+func (s *Syncer) analyzeAllFiles(files []string, forceStubs bool) ([]PageSyncInfo, error) {
 	var pages []PageSyncInfo
 
 	// First, create directory page info with change detection
@@ -322,6 +335,26 @@ func (s *Syncer) analyzeAllFiles(files []string) ([]PageSyncInfo, error) {
 
 		// Check if directory needs stub page creation
 		status := s.metadata.GetDirectoryStatus(dir, files)
+
+		// Force regeneration of directory stub pages if requested
+		if forceStubs && (status == StatusUpToDate || status == StatusNew) {
+			// For StatusNew, we still want to force update if the page exists in Confluence
+			if status == StatusNew {
+				// Quick check if page exists in Confluence
+				dirName := filepath.Base(dir)
+				cachedPageID := s.metadata.GetDirectoryPageID(dir)
+				if existingPage, err := s.findPageWithFallback(dirName, cachedPageID); err == nil && existingPage != nil {
+					status = StatusChanged
+					s.logger.Debug("Forcing directory stub regeneration for existing page: %s", dir)
+				} else {
+					// Keep StatusNew if page doesn't exist
+					s.logger.Debug("Directory page doesn't exist, keeping StatusNew: %s", dir)
+				}
+			} else {
+				status = StatusChanged
+				s.logger.Debug("Forcing directory stub regeneration for: %s", dir)
+			}
+		}
 
 		pages = append(pages, PageSyncInfo{
 			Title:       title,
@@ -362,7 +395,9 @@ func (s *Syncer) analyzeFileWithMetadata(filePath string) (PageSyncInfo, error) 
 
 	// If metadata shows up-to-date, double-check with Confluence (if accessible)
 	if status == StatusUpToDate {
-		existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, doc.Title)
+		// Use enhanced fallback lookup to handle title transformations
+		cachedPageID := s.metadata.GetPageID(filePath)
+		existingPage, err := s.findPageWithFallback(doc.Title, cachedPageID)
 		if err != nil {
 			// Can't connect to Confluence, trust metadata
 			s.logger.Debug("Cannot verify with Confluence, trusting metadata for: %s", doc.Title)
@@ -555,8 +590,33 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 		}
 	}
 
+	// Extract directory paths for discovery
+	var directories []string
+	for _, page := range pages {
+		if page.IsDirectory {
+			directories = append(directories, page.FilePath)
+		}
+	}
+
+	// Discover existing directory pages to improve parent resolution
+	discoveredPages := s.discoverExistingPages(directories)
+
 	// First create directory pages
 	directoryPages := make(map[string]*confluence.Page)
+
+	// Pre-populate with discovered pages
+	for dirPath, page := range discoveredPages {
+		directoryPages[dirPath] = page
+	}
+
+	dirCount := 0
+	for _, page := range pages {
+		if page.IsDirectory {
+			dirCount++
+		}
+	}
+	s.logger.Debug("Found %d directory pages to process", dirCount)
+
 	for _, page := range pages {
 		if !page.IsDirectory {
 			continue
@@ -569,12 +629,17 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 			parentDir = ""
 		}
 
+		s.logger.Debug("Processing directory: %s with status: %s", dirPath, page.Status)
+
 		// Skip if directory is up-to-date
 		if page.Status == StatusUpToDate {
 			s.logger.Debug("Skipping up-to-date directory: %s", dirPath)
 
-			// Still need to load the page for parent-child relationships
-			if pageID := s.metadata.GetDirectoryPageID(dirPath); pageID != "" {
+			// Check if we already have it from discovery
+			if existingPage := s.findPageFromDiscoveredCache(dirPath, discoveredPages); existingPage != nil {
+				directoryPages[dirPath] = existingPage
+			} else if pageID := s.metadata.GetDirectoryPageID(dirPath); pageID != "" {
+				// Fallback to direct page lookup
 				if existingPage, err := s.confluence.GetPage(pageID); err == nil {
 					directoryPages[dirPath] = existingPage
 				}
@@ -583,6 +648,7 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 			continue
 		}
 
+		s.logger.Debug("Creating/updating directory page for: %s (status: %s)", dirPath, page.Status)
 		confluencePage, err := s.createDirectoryPage(dirPath, parentDir, directoryPages, page.Status, allFiles)
 		if err != nil {
 			s.logger.Error("Failed to create directory page for %s: %v", dirPath, err)
@@ -590,6 +656,7 @@ func (s *Syncer) performEnhancedSync(pages []PageSyncInfo) error {
 			continue
 		}
 		directoryPages[dirPath] = confluencePage
+		s.logger.Info("Successfully processed directory page: %s (ID: %s)", dirPath, confluencePage.ID)
 		syncedCount++
 	}
 
@@ -662,7 +729,10 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 	}
 
 	var page *confluence.Page
-	existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, doc.Title)
+
+	// Use enhanced fallback lookup for existing pages
+	cachedPageID := s.metadata.GetPageID(filePath)
+	existingPage, err := s.findPageWithFallback(doc.Title, cachedPageID)
 	if err != nil {
 		s.logger.Debug("Could not check for existing page (will create new): %s", doc.Title)
 	}
@@ -787,5 +857,112 @@ func (s *Syncer) postProcessMermaidDiagrams(pageID, content string) error {
 	}
 
 	s.logger.Info("Successfully post-processed Mermaid diagrams for page: %s", page.Title)
+	return nil
+}
+
+// generateTitleVariations creates different title variations for fuzzy matching
+func (s *Syncer) generateTitleVariations(originalName string) []string {
+	caser := cases.Title(language.English)
+	variations := []string{
+		originalName, // Original form (e.g., "my-notebook")
+		caser.String(strings.ReplaceAll(originalName, "-", " ")), // Transform dashes to spaces and title case
+		caser.String(strings.ReplaceAll(originalName, "_", " ")), // Transform underscores to spaces and title case
+		strings.ReplaceAll(originalName, "-", " "),               // Dashes to spaces, no case change
+		strings.ReplaceAll(originalName, "_", " "),               // Underscores to spaces, no case change
+		caser.String(originalName),                               // Title case of original
+		strings.ToUpper(originalName),                            // All uppercase
+		strings.ToLower(originalName),                            // All lowercase
+	}
+
+	// Remove duplicates while preserving order
+	seen := make(map[string]bool)
+	var uniqueVariations []string
+	for _, variation := range variations {
+		if !seen[variation] && variation != "" {
+			seen[variation] = true
+			uniqueVariations = append(uniqueVariations, variation)
+		}
+	}
+
+	return uniqueVariations
+}
+
+// findPageWithFallback attempts to find a page using multiple strategies
+func (s *Syncer) findPageWithFallback(originalName, cachedPageID string) (*confluence.Page, error) {
+	// Strategy 1: Try cached page ID lookup
+	if cachedPageID != "" {
+		s.logger.Debug("Trying cached page ID lookup: %s", cachedPageID)
+		if existingPage, err := s.confluence.GetPage(cachedPageID); err == nil && existingPage != nil {
+			s.logger.Debug("Found page via cached ID: %s", existingPage.Title)
+			
+			// Check if page title has changed and log it
+			if existingPage.Title != originalName {
+				s.logger.Info("Page title has changed from '%s' to '%s' (ID: %s)", originalName, existingPage.Title, existingPage.ID)
+			}
+			
+			return existingPage, nil
+		}
+		s.logger.Debug("Cached page ID lookup failed, trying title variations")
+	}
+
+	// Strategy 2: Try exact title match (current behavior)
+	s.logger.Debug("Trying exact title match for: %s", originalName)
+	if existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, originalName); err == nil && existingPage != nil {
+		s.logger.Debug("Found page via exact title match: %s", existingPage.Title)
+		return existingPage, nil
+	}
+
+	// Strategy 3: Try fuzzy matching with title variations
+	variations := s.generateTitleVariations(originalName)
+	s.logger.Debug("Trying %d title variations for: %s", len(variations), originalName)
+
+	for _, variation := range variations {
+		if variation == originalName {
+			continue // Already tried exact match
+		}
+
+		s.logger.Debug("Trying title variation: %s", variation)
+		if existingPage, err := s.confluence.FindPageByTitle(s.config.Confluence.SpaceKey, variation); err == nil && existingPage != nil {
+			s.logger.Info("Found page via title variation '%s' for original name '%s': %s", variation, originalName, existingPage.Title)
+			return existingPage, nil
+		}
+	}
+
+	s.logger.Debug("No existing page found for: %s", originalName)
+	return nil, nil
+}
+
+// preloadExistingPages optionally tries to discover existing pages for better parent resolution
+// Since we're limited by the interface, this is a lighter approach that still helps
+func (s *Syncer) discoverExistingPages(directories []string) map[string]*confluence.Page {
+	s.logger.Debug("Discovering existing directory pages in Confluence")
+
+	discoveredPages := make(map[string]*confluence.Page)
+
+	// Try to find pages for each directory using fuzzy matching
+	for _, dirPath := range directories {
+		dirName := filepath.Base(dirPath)
+		cachedPageID := s.metadata.GetDirectoryPageID(dirPath)
+
+		if page, err := s.findPageWithFallback(dirName, cachedPageID); err == nil && page != nil {
+			discoveredPages[dirPath] = page
+			s.logger.Debug("Discovered existing directory page: %s -> %s", dirPath, page.Title)
+		}
+	}
+
+	s.logger.Info("Discovered %d existing directory pages", len(discoveredPages))
+	return discoveredPages
+}
+
+// findPageFromDiscoveredCache looks up a page from the discovered cache
+func (s *Syncer) findPageFromDiscoveredCache(dirPath string, discoveredPages map[string]*confluence.Page) *confluence.Page {
+	if discoveredPages == nil {
+		return nil
+	}
+
+	if page, exists := discoveredPages[dirPath]; exists {
+		return page
+	}
+
 	return nil
 }
