@@ -127,6 +127,21 @@ func (m *mockConfluenceClient) UploadAttachment(pageID, filePath string) (*confl
 	}, nil
 }
 
+func (m *mockConfluenceClient) GetPageHierarchy(spaceKey, parentPageTitle string) ([]confluence.PageInfo, error) {
+	// Simple mock implementation - return empty hierarchy
+	return []confluence.PageInfo{}, nil
+}
+
+func (m *mockConfluenceClient) GetPageAncestors(pageID string) ([]confluence.PageInfo, error) {
+	// Simple mock implementation - return empty ancestors
+	return []confluence.PageInfo{}, nil
+}
+
+func (m *mockConfluenceClient) GetChildPages(pageID string) ([]confluence.PageInfo, error) {
+	// Simple mock implementation - return empty children
+	return []confluence.PageInfo{}, nil
+}
+
 func (m *mockConfluenceClient) AddArchivedPage(title string) {
 	if page, exists := m.pages[title]; exists {
 		m.archivedPages[page.ID] = true
