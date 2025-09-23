@@ -119,6 +119,14 @@ func (s *Syncer) SyncWithFile(dryRun bool, force bool, forceStubs bool, singleFi
 		return fmt.Errorf("failed to analyze files: %w", err)
 	}
 
+	// Run rename detection analysis
+	renameDetections, err := s.DetectRenames(pages)
+	if err != nil {
+		s.logger.Debug("Rename detection failed: %v", err)
+	} else if len(renameDetections) > 0 {
+		s.DisplayRenameDetections(renameDetections)
+	}
+
 	// Count status types
 	var newCount, changedCount, upToDateCount int
 	for _, page := range pages {
@@ -784,6 +792,53 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 
 func (s *Syncer) ClearCache() error {
 	return s.metadata.ClearCache()
+}
+
+// DetectRenamesOnly runs only the rename detection analysis without performing sync
+func (s *Syncer) DetectRenamesOnly() error {
+	s.logger.Info("Running rename detection analysis...")
+
+	// Load sync metadata cache
+	if err := s.metadata.Load(); err != nil {
+		s.logger.Debug("Could not load sync cache: %v", err)
+		fmt.Println("❌ No sync cache found. Run a sync first to build the cache, then rename detection will be available.")
+		return nil
+	}
+
+	// Find markdown files
+	files, err := markdown.FindMarkdownFiles(s.config.Local.MarkdownDir, s.config.Local.Exclude)
+	if err != nil {
+		return fmt.Errorf("failed to find markdown files: %w", err)
+	}
+
+	if len(files) == 0 {
+		fmt.Println("📂 No markdown files found in the specified directory.")
+		return nil
+	}
+
+	s.logger.Info("Analyzing %d markdown files for rename detection", len(files))
+
+	// Analyze files for rename detection (skip change detection)
+	pages, err := s.analyzeAllFiles(files, false)
+	if err != nil {
+		return fmt.Errorf("failed to analyze files: %w", err)
+	}
+
+	// Run rename detection analysis
+	renameDetections, err := s.DetectRenames(pages)
+	if err != nil {
+		return fmt.Errorf("rename detection analysis failed: %w", err)
+	}
+
+	if len(renameDetections) == 0 {
+		fmt.Println("✅ No rename issues detected!")
+		fmt.Printf("📊 Analyzed %d files and %d directories - all titles match expectations.\n", 
+			len(files), len(s.extractDirectories(files)))
+	} else {
+		s.DisplayRenameDetections(renameDetections)
+	}
+
+	return nil
 }
 
 // hasMermaidDiagrams checks if the content contains any Mermaid diagram blocks

@@ -13,12 +13,13 @@ import (
 )
 
 var (
-	dryRun     bool
-	force      bool
-	noCache    bool
-	forceStubs bool
-	docsDir    string
-	spaceKey   string
+	dryRun        bool
+	force         bool
+	noCache       bool
+	forceStubs    bool
+	detectRenames bool
+	docsDir       string
+	spaceKey      string
 )
 
 // syncCmd represents the sync command
@@ -34,6 +35,7 @@ to track file changes and only updates pages that have actually been modified.`,
   conflux sync --dry-run                      # Preview changes without syncing  
   conflux sync --force                        # Skip confirmation prompts
   conflux sync --no-cache                     # Ignore cache, check all files
+  conflux sync --detect-renames               # Only run rename detection analysis
   conflux sync --force-stubs                  # Force regenerate all directory stub pages
   conflux sync -docs ./documentation         # Sync specific directory
   conflux sync -docs ./docs/readme.md        # Sync single markdown file
@@ -87,6 +89,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Handle detect-renames-only mode
+	if detectRenames {
+		if err := syncer.DetectRenamesOnly(); err != nil {
+			return fmt.Errorf("rename detection failed: %w", err)
+		}
+		return nil
+	}
+
 	if err := syncer.SyncWithFile(dryRun, force, forceStubs, singleFilePath); err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
@@ -102,6 +112,7 @@ func init() {
 	syncCmd.Flags().BoolVar(&dryRun, "dry-run", false, "perform a dry run without making changes")
 	syncCmd.Flags().BoolVar(&force, "force", false, "skip confirmation prompts and proceed with sync")
 	syncCmd.Flags().BoolVar(&noCache, "no-cache", false, "ignore cached change detection and check all files")
+	syncCmd.Flags().BoolVar(&detectRenames, "detect-renames", false, "only run rename detection analysis without syncing")
 	syncCmd.Flags().BoolVar(&forceStubs, "force-stubs", false, "force regeneration of all directory stub pages")
 	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown directory or single .md file")
 	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config file)")
