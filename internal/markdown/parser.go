@@ -541,9 +541,20 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
 	}
 
+	// Determine the filename to use for the attachment reference
+	filename := attachment.Filename
+	if filename == "" {
+		// Fallback to the generated filename if Confluence API doesn't return it
+		filename = result.Filename
+	}
+	if filename == "" {
+		// Final fallback to Title field if available
+		filename = attachment.Title
+	}
+
 	// Cleanup temp file
 	_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
 
-	// Return Confluence image macro
-	return fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, attachment.Filename)
+	// Return Confluence image macro with proper filename reference
+	return fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
 }
