@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -610,40 +611,14 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 		s.logger.Info("Updating existing page: %s", doc.Title)
 		page, err = s.confluence.UpdatePage(existingPage.ID, doc.Title, confluenceContent)
 
-		// Handle archived/restricted page (403 error) by creating a new page
+		// Handle archived/restricted page (403 error) by attempting replacement
 		if confluence.IsPageUpdateForbidden(err) {
-			s.logger.Info("Page appears to be archived or restricted, creating new page: %s", doc.Title)
+			s.logger.Info("Page appears to be archived or restricted, attempting to replace: %s", doc.Title)
 
 			// Clear the cached page ID for this file to avoid future conflicts
 			s.metadata.RemoveFileMetadata(filePath)
 
-			// Try with original title first, then with suffix if title conflicts
-			newTitle := doc.Title
-			attempt := 0
-			for attempt < 10 { // Limit attempts to prevent infinite loop
-				if attempt > 0 {
-					newTitle = fmt.Sprintf("%s (v%d)", doc.Title, attempt+1)
-				}
-
-				// Retry as a new page creation
-				if parentID != "" {
-					page, err = s.confluence.CreatePageWithParent(s.config.Confluence.SpaceKey, newTitle, confluenceContent, parentID)
-				} else {
-					page, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, newTitle, confluenceContent)
-				}
-
-				// If successful or error is not title conflict, break
-				if err == nil || !strings.Contains(err.Error(), "already exists with the same TITLE") {
-					break
-				}
-
-				attempt++
-				s.logger.Debug("Title '%s' already exists, trying: %s", doc.Title, newTitle)
-			}
-
-			if err == nil {
-				s.logger.Info("Successfully created new page to replace archived page: %s", newTitle)
-			}
+			page, err = s.handleArchivedPageReplacement(doc.Title, confluenceContent, parentID, existingPage.ID)
 		}
 	} else {
 		s.logger.Info("Creating new page: %s", doc.Title)
@@ -684,6 +659,46 @@ func (s *Syncer) ClearCache() error {
 // hasMermaidDiagrams checks if the content contains any Mermaid diagram blocks
 func (s *Syncer) hasMermaidDiagrams(content string) bool {
 	return strings.Contains(content, "```mermaid")
+}
+
+// handleArchivedPageReplacement handles the case where an existing page is archived/restricted
+// and we need to replace it with a new page with the same title
+func (s *Syncer) handleArchivedPageReplacement(title, content, parentID, existingPageID string) (*confluence.Page, error) {
+	// Attempt to create replacement page with original title
+	s.logger.Info("Attempting to create replacement page: %s", title)
+	var page *confluence.Page
+	var err error
+
+	if parentID != "" {
+		page, err = s.confluence.CreatePageWithParent(s.config.Confluence.SpaceKey, title, content, parentID)
+	} else {
+		page, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, title, content)
+	}
+
+	// If we get a "title already exists" error, try with a timestamp suffix
+	if err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "TITLE")) {
+		s.logger.Info("Title conflict detected, creating page with timestamp suffix: %s", title)
+		timestampSuffix := fmt.Sprintf(" (replaced %s)", time.Now().Format("2006-01-02 15:04"))
+		newTitle := title + timestampSuffix
+
+		if parentID != "" {
+			page, err = s.confluence.CreatePageWithParent(s.config.Confluence.SpaceKey, newTitle, content, parentID)
+		} else {
+			page, err = s.confluence.CreatePage(s.config.Confluence.SpaceKey, newTitle, content)
+		}
+
+		if err == nil {
+			s.logger.Info("Successfully created replacement page with new title: %s", newTitle)
+		} else {
+			s.logger.Error("Failed to create replacement page even with timestamp suffix: %v", err)
+		}
+	} else if err == nil {
+		s.logger.Info("Successfully created replacement page: %s", title)
+	} else {
+		s.logger.Error("Failed to create replacement page: %v", err)
+	}
+
+	return page, err
 }
 
 // postProcessMermaidDiagrams re-processes a page to convert Mermaid diagrams to images

@@ -498,10 +498,10 @@ func TestSyncer_SyncFileWithMetadata_ArchivedPageRecovery(t *testing.T) {
 		t.Errorf("Expected 2 pages after recovery, got %d", len(mockClient.pages))
 	}
 
-	// Check that the new page exists (should be titled "Test Page" or "Test Page (v2)")
+	// Check that the new page exists (should be titled with timestamp suffix)
 	var newPageFound bool
 	for title, page := range mockClient.pages {
-		if page.ID != "archived-page-1" && (title == "Test Page" || strings.HasPrefix(title, "Test Page (v")) {
+		if page.ID != "archived-page-1" && (title == "Test Page" || strings.Contains(title, "(replaced")) {
 			newPageFound = true
 			if !strings.Contains(page.Body.Storage.Value, "Content for archived page") {
 				t.Error("Expected new page to contain updated content")
@@ -540,7 +540,7 @@ func TestSyncer_SyncFileWithMetadata_TitleConflictRetry(t *testing.T) {
 	mockClient.pages["Existing Title"] = archivedPage
 	mockClient.AddArchivedPage("Existing Title")
 
-	// Add a page with the first retry title to force multiple retries
+	// Add a page with conflicting title to force timestamp suffix
 	conflictPage := &confluence.Page{
 		ID:    "conflict-page-1",
 		Title: "Existing Title (v2)",
@@ -554,17 +554,27 @@ func TestSyncer_SyncFileWithMetadata_TitleConflictRetry(t *testing.T) {
 		t.Fatalf("Failed to sync file with title conflict: %v", err)
 	}
 
-	// Should have created page with title "Existing Title (v3)"
-	newPage, exists := mockClient.pages["Existing Title (v3)"]
-	if !exists {
+	// Should have created page with timestamp suffix due to title conflict
+	var newPageFound bool
+	var newPageTitle string
+	for title, page := range mockClient.pages {
+		if page.ID != "archived-page-1" && page.ID != "conflict-page-1" && strings.Contains(title, "(replaced") {
+			newPageFound = true
+			newPageTitle = title
+			break
+		}
+	}
+
+	if !newPageFound {
 		// Check what pages were actually created
 		var titles []string
 		for title := range mockClient.pages {
 			titles = append(titles, title)
 		}
-		t.Fatalf("Expected page 'Existing Title (v3)' to be created. Available pages: %v", titles)
+		t.Fatalf("Expected page with timestamp suffix to be created. Available pages: %v", titles)
 	}
 
+	newPage := mockClient.pages[newPageTitle]
 	if newPage.ID == "archived-page-1" || newPage.ID == "conflict-page-1" {
 		t.Error("Expected new page to have different ID from existing pages")
 	}
