@@ -11,6 +11,7 @@ import (
 
 	"conflux/internal/config"
 	"conflux/internal/confluence"
+	"conflux/internal/images"
 	"conflux/internal/markdown"
 	"conflux/internal/mermaid"
 	"conflux/pkg/logger"
@@ -713,11 +714,16 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 		return fmt.Errorf("failed to parse markdown: %w", err)
 	}
 
-	// Convert content with mermaid support
+	// Convert content with mermaid and image support
 	pageID := s.metadata.GetPageID(filePath)
 	var confluenceContent string
 	if concreteClient, ok := s.confluence.(*confluence.Client); ok {
-		confluenceContent = markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, concreteClient, pageID)
+		var convErr error
+		confluenceContent, convErr = markdown.ConvertToConfluenceFormatWithImages(doc.Content, s.config, concreteClient, pageID, filePath)
+		if convErr != nil {
+			s.logger.Debug("Error processing images, falling back to mermaid-only processing: %v", convErr)
+			confluenceContent = markdown.ConvertToConfluenceFormatWithMermaid(doc.Content, s.config, concreteClient, pageID)
+		}
 	} else {
 		confluenceContent = markdown.ConvertToConfluenceFormat(doc.Content)
 	}
@@ -771,13 +777,13 @@ func (s *Syncer) syncFileWithMetadata(filePath string, directoryPages map[string
 		return fmt.Errorf("failed to sync page: %w", err)
 	}
 
-	// Post-process Mermaid diagrams for the created/updated page
-	if s.config.Mermaid.Mode == "convert-to-image" && s.hasMermaidDiagrams(doc.Content) {
-		s.logger.Info("Post-processing Mermaid diagrams for page: %s", doc.Title)
-		err = s.postProcessMermaidDiagrams(page.ID, doc.Content)
+	// Post-process diagrams and images for the created/updated page
+	if (s.config.Mermaid.Mode == "convert-to-image" && s.hasMermaidDiagrams(doc.Content)) || s.hasImages(doc.Content) {
+		s.logger.Info("Post-processing diagrams and images for page: %s", doc.Title)
+		err = s.postProcessPageContent(page.ID, doc.Content, filePath)
 		if err != nil {
-			s.logger.Error("Failed to post-process Mermaid diagrams for %s: %v", doc.Title, err)
-			// Don't fail the entire sync for Mermaid processing errors
+			s.logger.Error("Failed to post-process content for %s: %v", doc.Title, err)
+			// Don't fail the entire sync for processing errors
 		}
 	}
 
@@ -846,6 +852,11 @@ func (s *Syncer) hasMermaidDiagrams(content string) bool {
 	return strings.Contains(content, "```mermaid")
 }
 
+// hasImages checks if the content contains any image references
+func (s *Syncer) hasImages(content string) bool {
+	return strings.Contains(content, "![")
+}
+
 // handleArchivedPageReplacement handles the case where an existing page is archived/restricted
 // and we need to replace it with a new page with the same title
 func (s *Syncer) handleArchivedPageReplacement(title, content, parentID, existingPageID string) (*confluence.Page, error) {
@@ -886,15 +897,20 @@ func (s *Syncer) handleArchivedPageReplacement(title, content, parentID, existin
 	return page, err
 }
 
-// postProcessMermaidDiagrams re-processes a page to convert Mermaid diagrams to images
+// postProcessPageContent re-processes a page to convert Mermaid diagrams and images
 // This is called after page creation when we have a pageID for attachment uploads
-func (s *Syncer) postProcessMermaidDiagrams(pageID, content string) error {
-	s.logger.Debug("Post-processing Mermaid diagrams for page ID: %s", pageID)
+func (s *Syncer) postProcessPageContent(pageID, content, filePath string) error {
+	s.logger.Debug("Post-processing page content for page ID: %s", pageID)
 
-	// Re-convert content with the actual pageID for Mermaid processing
+	// Re-convert content with the actual pageID for Mermaid and image processing
 	var updatedContent string
+	var err error
 	if concreteClient, ok := s.confluence.(*confluence.Client); ok {
-		updatedContent = markdown.ConvertToConfluenceFormatWithMermaid(content, s.config, concreteClient, pageID)
+		updatedContent, err = markdown.ConvertToConfluenceFormatWithImages(content, s.config, concreteClient, pageID, filePath)
+		if err != nil {
+			s.logger.Debug("Error processing images, falling back to mermaid-only processing: %v", err)
+			updatedContent = markdown.ConvertToConfluenceFormatWithMermaid(content, s.config, concreteClient, pageID)
+		}
 	} else {
 		updatedContent = markdown.ConvertToConfluenceFormat(content)
 	}
@@ -905,14 +921,87 @@ func (s *Syncer) postProcessMermaidDiagrams(pageID, content string) error {
 		return fmt.Errorf("failed to get page info for post-processing: %w", err)
 	}
 
-	// Update the page with Mermaid diagrams converted to images
+	// Update the page with processed diagrams and images
 	_, err = s.confluence.UpdatePage(pageID, page.Title, updatedContent)
 	if err != nil {
-		return fmt.Errorf("failed to update page with processed Mermaid diagrams: %w", err)
+		return fmt.Errorf("failed to update page with processed content: %w", err)
 	}
 
-	s.logger.Info("Successfully post-processed Mermaid diagrams for page: %s", page.Title)
+	s.logger.Info("Successfully post-processed content for page: %s", page.Title)
 	return nil
+}
+
+// processImagesWithTracking processes images in markdown content with attachment tracking
+func (s *Syncer) processImagesWithTracking(content, pageID, filePath string) (string, error) {
+	if concreteClient, ok := s.confluence.(*confluence.Client); !ok {
+		return content, nil
+	} else {
+		// Create image processor
+		imageProcessor := images.NewProcessor(&s.config.Images, s.logger)
+		
+		// Get directory of the markdown file to resolve relative image paths
+		markdownDir := filepath.Dir(filePath)
+		
+		// Find image references in the original markdown content
+		imageRefs, err := imageProcessor.FindImageReferences(content, markdownDir)
+		if err != nil {
+			return content, fmt.Errorf("failed to find image references: %w", err)
+		}
+
+		// Validate image references
+		validRefs, err := imageProcessor.ValidateImageReferences(imageRefs)
+		if err != nil {
+			return content, fmt.Errorf("failed to validate image references: %w", err)
+		}
+
+		// Process each valid image reference
+		updatedContent := content
+		for _, ref := range validRefs {
+			filename := images.GetImageFilename(ref.AbsolutePath)
+			
+			// Calculate hash of the image file
+			currentHash, err := images.CalculateImageHash(ref.AbsolutePath)
+			if err != nil {
+				s.logger.Debug("Failed to calculate hash for image %s: %v", ref.AbsolutePath, err)
+				continue
+			}
+
+			// Check if attachment has changed
+			if !s.metadata.AttachmentChanged(filePath, filename, currentHash) {
+				s.logger.Debug("Image %s unchanged, skipping upload", filename)
+				// Attachment hasn't changed, just replace with macro
+				confluenceImageMacro := fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
+				updatedContent = strings.ReplaceAll(updatedContent, ref.MarkdownSyntax, confluenceImageMacro)
+				continue
+			}
+
+			s.logger.Debug("Uploading new/changed image: %s", filename)
+			// Upload image as attachment (new or changed)
+			attachment, err := concreteClient.UploadAttachment(pageID, ref.AbsolutePath)
+			if err != nil {
+				s.logger.Debug("Failed to upload image %s: %v", filename, err)
+				continue
+			}
+
+			// Determine the filename for the attachment reference
+			attachmentFilename := attachment.Filename
+			if attachmentFilename == "" {
+				attachmentFilename = attachment.Title
+			}
+			if attachmentFilename == "" {
+				attachmentFilename = filename
+			}
+
+			// Update attachment tracking
+			s.metadata.UpdateFileAttachment(filePath, filename, currentHash)
+
+			// Replace the markdown image syntax with Confluence image macro
+			confluenceImageMacro := fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, attachmentFilename)
+			updatedContent = strings.ReplaceAll(updatedContent, ref.MarkdownSyntax, confluenceImageMacro)
+		}
+
+		return updatedContent, nil
+	}
 }
 
 // generateTitleVariations creates different title variations for fuzzy matching

@@ -11,6 +11,7 @@ type Config struct {
 	Confluence ConfluenceConfig `yaml:"confluence"`
 	Local      LocalConfig      `yaml:"local"`
 	Mermaid    MermaidConfig    `yaml:"mermaid"`
+	Images     ImageConfig      `yaml:"images"`
 }
 
 type ConfluenceConfig struct {
@@ -35,6 +36,14 @@ type MermaidConfig struct {
 	Scale   float64 `yaml:"scale"`    // puppeteer scale factor for higher resolution
 }
 
+type ImageConfig struct {
+	SupportedFormats []string `yaml:"supported_formats"` // File extensions: png, jpg, jpeg, gif, svg, webp
+	MaxFileSize      int64    `yaml:"max_file_size"`     // Maximum file size in bytes (default: 10MB)
+	ResizeLarge      bool     `yaml:"resize_large"`      // Whether to resize large images
+	MaxWidth         int      `yaml:"max_width"`         // Max width for resizing (default: 1200px)
+	MaxHeight        int      `yaml:"max_height"`        // Max height for resizing (default: 800px)
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -48,6 +57,9 @@ func Load(path string) (*Config, error) {
 
 	// Set mermaid defaults
 	config.setMermaidDefaults()
+
+	// Set image defaults
+	config.setImageDefaults()
 
 	if err := config.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -80,6 +92,21 @@ func (c *Config) setMermaidDefaults() {
 	}
 }
 
+func (c *Config) setImageDefaults() {
+	if len(c.Images.SupportedFormats) == 0 {
+		c.Images.SupportedFormats = []string{"png", "jpg", "jpeg", "gif", "svg", "webp"}
+	}
+	if c.Images.MaxFileSize == 0 {
+		c.Images.MaxFileSize = 10 * 1024 * 1024 // 10MB default
+	}
+	if c.Images.MaxWidth == 0 {
+		c.Images.MaxWidth = 1200
+	}
+	if c.Images.MaxHeight == 0 {
+		c.Images.MaxHeight = 800
+	}
+}
+
 func (c *Config) validateMermaid() error {
 	validModes := map[string]bool{
 		"preserve":         true,
@@ -101,6 +128,37 @@ func (c *Config) validateMermaid() error {
 	return nil
 }
 
+func (c *Config) validateImages() error {
+	validFormats := map[string]bool{
+		"png":  true,
+		"jpg":  true,
+		"jpeg": true,
+		"gif":  true,
+		"svg":  true,
+		"webp": true,
+	}
+
+	for _, format := range c.Images.SupportedFormats {
+		if !validFormats[format] {
+			return fmt.Errorf("images.supported_formats contains invalid format '%s', must be one of: png, jpg, jpeg, gif, svg, webp", format)
+		}
+	}
+
+	if c.Images.MaxFileSize < 0 {
+		return fmt.Errorf("images.max_file_size cannot be negative")
+	}
+
+	if c.Images.MaxWidth < 0 {
+		return fmt.Errorf("images.max_width cannot be negative")
+	}
+
+	if c.Images.MaxHeight < 0 {
+		return fmt.Errorf("images.max_height cannot be negative")
+	}
+
+	return nil
+}
+
 // LoadForSync loads config with relaxed validation for space_key (can be overridden by CLI)
 func LoadForSync(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -115,6 +173,9 @@ func LoadForSync(path string) (*Config, error) {
 
 	// Set mermaid defaults
 	config.setMermaidDefaults()
+
+	// Set image defaults
+	config.setImageDefaults()
 
 	if err := config.validateForSync(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -137,6 +198,9 @@ func LoadForListPages(path string) (*Config, error) {
 
 	// Set mermaid defaults
 	config.setMermaidDefaults()
+
+	// Set image defaults
+	config.setImageDefaults()
 
 	if err := config.validateForListPages(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -163,6 +227,10 @@ func (c *Config) validate() error {
 		return err
 	}
 
+	if err := c.validateImages(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -183,6 +251,10 @@ func (c *Config) validateForSync() error {
 		return err
 	}
 
+	if err := c.validateImages(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -200,6 +272,10 @@ func (c *Config) validateForListPages() error {
 	// Note: space_key is NOT required for list-pages command
 
 	if err := c.validateMermaid(); err != nil {
+		return err
+	}
+
+	if err := c.validateImages(); err != nil {
 		return err
 	}
 

@@ -12,12 +12,13 @@ import (
 )
 
 type FileMetadata struct {
-	Hash     string    `json:"hash"`
-	LastSync time.Time `json:"last_sync"`
-	PageID   string    `json:"page_id,omitempty"`
-	Title    string    `json:"title"`
-	ModTime  time.Time `json:"mod_time"`
-	Size     int64     `json:"size"`
+	Hash        string            `json:"hash"`
+	LastSync    time.Time         `json:"last_sync"`
+	PageID      string            `json:"page_id,omitempty"`
+	Title       string            `json:"title"`
+	ModTime     time.Time         `json:"mod_time"`
+	Size        int64             `json:"size"`
+	Attachments map[string]string `json:"attachments,omitempty"` // filename -> hash of file content
 }
 
 type DirectoryMetadata struct {
@@ -271,4 +272,43 @@ func (sm *SyncMetadata) GetDirectoryPageID(dirPath string) string {
 		return metadata.PageID
 	}
 	return ""
+}
+
+// GetFileAttachments returns the cached attachment hashes for a file
+func (sm *SyncMetadata) GetFileAttachments(filePath string) map[string]string {
+	if metadata, exists := sm.Files[filePath]; exists {
+		if metadata.Attachments == nil {
+			return make(map[string]string)
+		}
+		return metadata.Attachments
+	}
+	return make(map[string]string)
+}
+
+// UpdateFileAttachment updates the cached attachment hash for a file
+func (sm *SyncMetadata) UpdateFileAttachment(filePath, filename, hash string) {
+	if metadata, exists := sm.Files[filePath]; exists {
+		if metadata.Attachments == nil {
+			metadata.Attachments = make(map[string]string)
+		}
+		metadata.Attachments[filename] = hash
+		sm.Files[filePath] = metadata
+	}
+}
+
+// RemoveFileAttachment removes a cached attachment for a file
+func (sm *SyncMetadata) RemoveFileAttachment(filePath, filename string) {
+	if metadata, exists := sm.Files[filePath]; exists {
+		if metadata.Attachments != nil {
+			delete(metadata.Attachments, filename)
+			sm.Files[filePath] = metadata
+		}
+	}
+}
+
+// AttachmentChanged checks if an attachment has changed based on file hash
+func (sm *SyncMetadata) AttachmentChanged(filePath, filename, currentHash string) bool {
+	attachments := sm.GetFileAttachments(filePath)
+	cachedHash, exists := attachments[filename]
+	return !exists || cachedHash != currentHash
 }

@@ -9,6 +9,7 @@ import (
 
 	"conflux/internal/config"
 	"conflux/internal/confluence"
+	"conflux/internal/images"
 	"conflux/internal/mermaid"
 )
 
@@ -557,4 +558,69 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 
 	// Return Confluence image macro with full page width
 	return fmt.Sprintf(`<ac:image ac:width="100%%"><ri:attachment ri:filename="%s"/></ac:image>`, filename)
+}
+
+// ConvertToConfluenceFormatWithImages processes markdown with image attachment support
+func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, client *confluence.Client, pageID string, markdownFilePath string) (string, error) {
+	// Process mermaid diagrams first
+	content := ConvertToConfluenceFormatWithMermaid(markdown, cfg, client, pageID)
+	
+	// Now process images if we have the necessary components
+	if cfg == nil || client == nil || pageID == "" || markdownFilePath == "" {
+		// No image processing possible - return content as-is
+		return content, nil
+	}
+
+	// Create image processor
+	imageProcessor := images.NewProcessor(&cfg.Images, nil)
+	
+	// Get directory of the markdown file to resolve relative image paths
+	markdownDir := filepath.Dir(markdownFilePath)
+	
+	// Find image references in the original markdown content
+	imageRefs, err := imageProcessor.FindImageReferences(markdown, markdownDir)
+	if err != nil {
+		// Log error but continue without image processing
+		return content, nil
+	}
+
+	// Validate image references
+	validRefs, err := imageProcessor.ValidateImageReferences(imageRefs)
+	if err != nil {
+		// Log error but continue without image processing
+		return content, nil
+	}
+
+	// If no valid image references, return content as-is
+	if len(validRefs) == 0 {
+		return content, nil
+	}
+
+	// Process each valid image reference
+	for _, ref := range validRefs {
+		// Upload image as attachment
+		attachment, err := client.UploadAttachment(pageID, ref.AbsolutePath)
+		if err != nil {
+			// Skip this image on upload error, continue with others
+			continue
+		}
+
+		// Determine the filename for the attachment reference
+		filename := attachment.Filename
+		if filename == "" {
+			filename = attachment.Title
+		}
+		if filename == "" {
+			filename = images.GetImageFilename(ref.AbsolutePath)
+		}
+
+		// Replace the markdown image syntax with Confluence image macro
+		confluenceImageMacro := fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
+		
+		// Replace in the content (note: we're working with already processed content that may have HTML)
+		// We need to be careful to replace the original markdown syntax, not HTML
+		content = strings.ReplaceAll(content, ref.MarkdownSyntax, confluenceImageMacro)
+	}
+
+	return content, nil
 }

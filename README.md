@@ -5,6 +5,7 @@ A command-line tool to synchronize local markdown files to Confluence spaces wit
 ## Features
 
 - **Sync markdown files to Confluence pages** - Convert and upload your local documentation
+- **Image attachment support** - Automatically upload and reference images from your markdown files
 - **Mermaid.js diagram support** - Automatically convert or preserve mermaid diagrams in your documentation
 - **Automatic directory page creation** - Creates organized parent pages with children macros for folder structures
 - **Smart page hierarchy** - Maintains your local directory structure in Confluence
@@ -87,6 +88,76 @@ Conflux automatically checks for mermaid CLI availability:
 - Use `conflux sync -verbose` to see dependency check results
 - Graceful fallback ensures sync operations continue even if CLI is unavailable
 
+## Image Attachment Support
+
+Conflux automatically detects and uploads image files referenced in your markdown documentation, making them available as Confluence page attachments.
+
+### Supported Image Formats
+
+By default, Conflux supports the following image formats:
+- **PNG** - Portable Network Graphics
+- **JPG/JPEG** - Joint Photographic Experts Group
+- **GIF** - Graphics Interchange Format
+- **SVG** - Scalable Vector Graphics
+- **WEBP** - Modern web-optimized format
+
+### How It Works
+
+1. **Automatic Detection**: Conflux scans your markdown for image references using standard markdown syntax: `![alt text](path/to/image.png)`
+2. **Path Resolution**: Both relative and absolute image paths are supported
+3. **Validation**: Images are checked for existence, file size limits, and supported formats
+4. **Upload**: Valid images are uploaded as Confluence page attachments
+5. **Reference Replacement**: Markdown image syntax is replaced with Confluence image macros
+
+### Configuration
+
+Configure image processing in your `config.yaml`:
+
+```yaml
+images:
+  supported_formats: ["png", "jpg", "jpeg", "gif", "svg", "webp"]
+  max_file_size: 10485760  # 10MB in bytes
+  resize_large: false      # Future feature for image resizing
+  max_width: 1200          # Max width for future resizing feature
+  max_height: 800          # Max height for future resizing feature
+```
+
+### Example Usage
+
+Create a markdown file with image references:
+
+```markdown
+# Project Architecture
+
+Here's our system architecture:
+
+![System Architecture](./images/architecture.png)
+
+## Component Diagram
+
+![Component Relationships](../diagrams/components.svg)
+
+## Screenshots
+
+![Application Screenshot](./screenshots/main-ui.jpg)
+```
+
+When synced to Confluence:
+- Images are uploaded as page attachments
+- Markdown image syntax is replaced with Confluence image macros
+- Images display properly in Confluence pages
+- Alt text is preserved for accessibility
+
+### Error Handling
+
+Conflux handles image processing errors gracefully:
+- **Missing files**: Logs warnings but continues sync operation
+- **Unsupported formats**: Skips invalid images and reports in logs
+- **Size limits**: Reports files that exceed configured limits
+- **Upload failures**: Continues with other images and page content
+
+Use `conflux sync -verbose` to see detailed image processing information.
+
 ## Installation
 
 ### From Source
@@ -165,6 +236,14 @@ local:
   exclude:
     - "README.md"
     - "*.tmp.md"
+
+# Optional: Image attachment support
+images:
+  supported_formats: ["png", "jpg", "jpeg", "gif", "svg", "webp"]
+  max_file_size: 10485760  # 10MB in bytes
+  resize_large: false      # Future feature for image resizing
+  max_width: 1200          # Max width for future resizing feature
+  max_height: 800          # Max height for future resizing feature
 
 # Optional: Mermaid.js diagram support
 mermaid:
@@ -250,6 +329,32 @@ The children macro requires:
 - **Valid Confluence space** - Make sure your space exists and is accessible
 - **Appropriate permissions** - Your API token needs page creation/update rights
 
+### Images Not Uploading or Displaying
+
+If images in your markdown aren't being uploaded or displayed correctly:
+
+1. **Check file paths**: Ensure image paths in your markdown are correct relative to the markdown file
+   ```markdown
+   ![Image](./images/diagram.png)  # Relative to markdown file location
+   ![Image](/absolute/path/image.png)  # Absolute path
+   ```
+
+2. **Verify file formats**: Ensure images use supported formats
+   - Supported: PNG, JPG, JPEG, GIF, SVG, WEBP
+   - Check configuration in `config.yaml` under `images.supported_formats`
+
+3. **Check file sizes**: Large files may be rejected
+   - Default limit: 10MB
+   - Configure in `config.yaml`: `images.max_file_size`
+
+4. **Review permissions**: Ensure your API token can upload attachments
+   - Confluence admin permissions may be required for file uploads
+
+5. **Use verbose logging**: See detailed image processing information
+   ```bash
+   conflux sync -verbose -dry-run  # See what images are detected
+   ```
+
 ### Mermaid Diagrams Not Converting
 
 If mermaid diagrams aren't being converted to images:
@@ -298,7 +403,19 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 
 ## Recent Improvements
 
-### v1.2.0 (Latest)
+### v1.3.0 (Latest)
+- **✅ Image attachment support** - Automatically detect and upload images referenced in markdown files
+  - **Automatic detection**: Finds `![alt](image.png)` syntax in markdown content
+  - **Multiple formats**: Support for PNG, JPG, JPEG, GIF, SVG, and WEBP images
+  - **Path resolution**: Handles both relative and absolute image paths
+  - **File validation**: Checks for file existence, size limits, and supported formats
+  - **Graceful error handling**: Continues sync operation even when some images fail
+- **✅ Enhanced markdown processing** - Extended parser to handle image references alongside mermaid diagrams
+- **✅ Configurable image processing** - File size limits, supported formats, and future resizing options
+- **✅ Improved sync logic** - Post-processing now handles both images and mermaid diagrams efficiently
+- **✅ Comprehensive image validation** - Built-in checks for file existence, formats, and size limits
+
+### v1.2.0
 - **✅ Mermaid.js diagram support** - Automatically process mermaid diagrams with two modes:
   - **Preserve mode**: Keep diagrams as syntax-highlighted code blocks
   - **Convert-to-image mode**: Convert to PNG/SVG/PDF and upload as attachments
