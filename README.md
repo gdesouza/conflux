@@ -442,6 +442,28 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 - Enhanced security with SHA256 hashing instead of MD5
 - Improved error handling and temp file cleanup in mermaid processing
 
+## Development
+
+### Session Summaries
+
+Development session summaries are maintained in [`docs/sessions/`](docs/sessions/) to provide context continuity between development sessions. These summaries document:
+
+- Feature implementation details and architectural decisions
+- Key technical insights and lessons learned  
+- Implementation approach and rationale
+- Files modified and their purposes
+- Test coverage and validation approach
+
+This helps maintain context for future development work and provides valuable historical information about the project's evolution.
+
+### Contributing
+
+When contributing to this project:
+1. Follow the existing code structure and patterns
+2. Add comprehensive tests for new features
+3. Update documentation (README, session summaries)
+4. Use the session summary template for significant changes
+
 ## License
 
 MIT
