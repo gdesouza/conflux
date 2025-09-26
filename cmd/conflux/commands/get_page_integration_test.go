@@ -63,6 +63,7 @@ func TestGetPage_ByID(t *testing.T) {
 	configFile = cfgPath
 	verbose = false
 	getPageSpace = "DOCS"
+	getPageProject = ""     // ensure no leftover project selection
 	getPageIDOrTitle = "42" // numeric triggers ID path
 	getPageFormat = "storage"
 
@@ -91,6 +92,7 @@ func TestGetPage_FallbackToTitle(t *testing.T) {
 	configFile = cfgPath
 	verbose = false
 	getPageSpace = "DOCS"
+	getPageProject = ""        // ensure no leftover project selection
 	getPageIDOrTitle = "Guide" // non-numeric triggers title search
 	getPageFormat = "html"
 
@@ -115,6 +117,7 @@ func TestGetPage_PageNotFound(t *testing.T) {
 	configFile = cfgPath
 	verbose = false
 	getPageSpace = "DOCS"
+	getPageProject = "" // ensure no leftover project selection
 	getPageIDOrTitle = "Missing"
 	getPageFormat = "storage"
 

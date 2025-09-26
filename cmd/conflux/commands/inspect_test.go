@@ -65,7 +65,8 @@ func TestInspect_SpaceOverview(t *testing.T) {
 	configFile = cfgPath
 	verbose = false
 	inspectSpace = "DOCS"
-	inspectPage = "" // overview
+	inspectProject = "" // ensure no leftover project
+	inspectPage = ""    // overview
 
 	out := captureStdout(func() {
 		withMockClientInspect(t, mc, func() {
