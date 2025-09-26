@@ -80,7 +80,7 @@ confluence:
 			errorMsg:    "confluence.api_token is required",
 		},
 		{
-			name: "missing space_key",
+			name: "missing space_key no projects",
 			configData: `
 confluence:
   base_url: "https://example.atlassian.net"
@@ -89,6 +89,56 @@ confluence:
 `,
 			expectError: true,
 			errorMsg:    "confluence.space_key is required",
+		},
+		{
+			name: "projects make space_key optional",
+			configData: `
+confluence:
+  base_url: "https://example.atlassian.net"
+  username: "test@example.com"
+  api_token: "test_token"
+projects:
+  - name: core
+    space_key: CORE
+    local:
+      markdown_dir: ./core
+`,
+			expectError: false,
+		},
+		{
+			name: "project missing fields",
+			configData: `
+confluence:
+  base_url: "https://example.atlassian.net"
+  username: "test@example.com"
+  api_token: "test_token"
+projects:
+  - name: bad
+    local:
+      markdown_dir: ./core
+`,
+			expectError: true,
+			errorMsg:    "projects[0].space_key is required",
+		},
+		{
+			name: "duplicate project name",
+			configData: `
+confluence:
+  base_url: "https://example.atlassian.net"
+  username: "test@example.com"
+  api_token: "test_token"
+projects:
+  - name: dup
+    space_key: A
+    local:
+      markdown_dir: ./a
+  - name: dup
+    space_key: B
+    local:
+      markdown_dir: ./b
+`,
+			expectError: true,
+			errorMsg:    "duplicate project name",
 		},
 		{
 			name: "invalid mermaid mode",

@@ -15,6 +15,7 @@ A command-line tool to synchronize local markdown files to Confluence spaces wit
 - **Configurable file exclusions** - Skip files you don't want to sync
 - **Verbose logging** - Detailed output for debugging and monitoring
 - **Proper page versioning** - Handles Confluence page version management automatically
+- **Multi-project configuration** - Map multiple local doc trees to multiple Confluence spaces and select at runtime with `--project`
 
 ## Mermaid.js Diagram Support
 
@@ -222,7 +223,7 @@ listed and updated whenever child pages are added or modified.
 
 ## Configuration
 
-Create a `config.yaml` file:
+Create a `config.yaml` file (single-project example):
 
 ```yaml
 confluence:
@@ -240,18 +241,72 @@ local:
 # Optional: Image attachment support
 images:
   supported_formats: ["png", "jpg", "jpeg", "gif", "svg", "webp"]
-  max_file_size: 10485760  # 10MB in bytes
-  resize_large: false      # Future feature for image resizing
-  max_width: 1200          # Max width for future resizing feature
-  max_height: 800          # Max height for future resizing feature
+  max_file_size: 10485760
+  resize_large: false
+  max_width: 1200
+  max_height: 800
 
 # Optional: Mermaid.js diagram support
 mermaid:
-  mode: "convert-to-image"  # or "preserve"
-  format: "png"             # png, svg, or pdf (for convert-to-image mode)
-  cli_path: "mmdc"          # path to mermaid CLI (optional, uses 'mmdc' by default)
-  theme: "default"          # mermaid theme: default, dark, forest, neutral
+  mode: "convert-to-image"
+  format: "png"
+  cli_path: "mmdc"
+  theme: "default"
 ```
+
+### Multi-Project Configuration
+
+You can manage multiple documentation roots and Confluence spaces using the `projects` section. When `projects` are defined the top-level `confluence.space_key` becomes optional. The first project acts as the default if no `--project` is specified and no explicit space is provided.
+
+```yaml
+confluence:
+  base_url: "https://yourcompany.atlassian.net/wiki"
+  username: "your.email@company.com"
+  api_token: "your-api-token-here"
+
+projects:
+  - name: "core"
+    space_key: "CORE"
+    local:
+      markdown_dir: "./core-docs"
+      exclude: ["README.md"]
+  - name: "platform"
+    space_key: "PLAT"
+    local:
+      markdown_dir: "./platform-docs"
+      exclude: ["draft-*", "internal/*"]
+
+images:
+  supported_formats: ["png", "jpg", "jpeg", "gif", "svg", "webp"]
+
+mermaid:
+  mode: "preserve"
+```
+
+#### Space Resolution Precedence
+1. Explicit CLI `--space` flag
+2. Selected project via `--project <name>`
+3. Default project (first in list) if any
+4. Legacy top-level `confluence.space_key`
+
+#### Selecting a Project
+```bash
+# Sync using the 'platform' project (infer space + docs path)
+conflux sync --project platform
+
+# List pages for 'core' without specifying --space
+conflux list-pages --project core
+
+# Fetch a page with project inference
+conflux get-page --project core --page "Getting Started"
+```
+
+#### Listing Projects
+```bash
+conflux projects
+conflux projects --show-exclude
+```
+Outputs all configured projects, marking the first one as the default.
 
 ## Usage
 
@@ -261,45 +316,23 @@ mermaid:
 # Basic usage - sync current directory with default config
 conflux
 
-# Specify documents directory via CLI (recommended)
-conflux -docs ./documentation
+# Specify documents directory via CLI (overrides config & project local path)
+conflux sync -docs ./documentation
 
 # Use custom config file
 conflux -config /path/to/config.yaml
 
-# Specify documents directory and custom config
-conflux sync -docs /path/to/markdown -config my-config.yaml
+# Multi-project: choose project (space + local docs inferred)
+conflux sync --project core
 
 # Dry run (no changes made)
 conflux sync -dry-run -verbose
 
-# Complex example
-conflux sync -docs ./my-docs -config prod-config.yaml -dry-run -verbose
+# Complex example overriding inferred docs dir
+conflux sync --project platform -docs ./overrides/platform -dry-run -verbose
 ```
 
 ### List Pages Command
-
-### Get Page Command
-
-```bash
-# Fetch a page by numeric ID (storage format by default)
-conflux get-page -space DOCS -page 123456789
-
-# Fetch by title (quotes recommended for multi-word titles)
-conflux get-page -space DOCS -page "Getting Started"
-
-# Output rendered HTML view (if available) instead of storage format
-conflux get-page -space DOCS -page 123456789 -format html
-
-# Convert to Markdown (best-effort HTML -> Markdown conversion)
-conflux get-page -space DOCS -page 123456789 -format markdown
-```
-
-Supported formats:
-- storage (default) – raw Confluence storage format XML/HTML
-- html – rendered page HTML (falls back to storage if view not available)
-- markdown – converts rendered HTML (or storage) to Markdown
-
 ```bash
 # List all pages in a space
 conflux list-pages -space DOCS
@@ -307,8 +340,42 @@ conflux list-pages -space DOCS
 # List pages under a specific parent page
 conflux list-pages -space DOCS -parent "API Documentation"
 
-# Use custom config file
-conflux list-pages -config prod-config.yaml -space TEAM -verbose
+# Use project inference (no --space required)
+conflux list-pages --project core
+```
+
+### Get Page Command
+```bash
+# Fetch a page by numeric ID (storage format by default)
+conflux get-page -space DOCS -page 123456789
+
+# Fetch by title
+conflux get-page -space DOCS -page "Getting Started"
+
+# Use project inference
+conflux get-page --project core --page "Getting Started"
+
+# Output rendered HTML view
+conflux get-page -space DOCS -page 123456789 -format html
+
+# Convert to Markdown
+conflux get-page -space DOCS -page 123456789 -format markdown
+```
+Supported formats:
+- storage (default) – raw Confluence storage format XML/HTML
+- html – rendered page HTML (falls back to storage if view not available)
+- markdown – converts rendered HTML (or storage) to Markdown
+
+### Inspect Command
+```bash
+# Space overview
+conflux inspect -space DOCS
+
+# Inspect a page by title
+conflux inspect -space DOCS -page "Architecture"
+
+# With project inference
+conflux inspect --project core -page "Architecture"
 ```
 
 ### CLI Commands
@@ -316,28 +383,43 @@ conflux list-pages -config prod-config.yaml -space TEAM -verbose
 - `sync` - Sync local markdown files to Confluence (default command)
 - `list-pages` - List page hierarchy from a Confluence space
 - `get-page` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
+- `inspect` - Inspect page hierarchy and relationships
+- `projects` - List configured projects (multi-project mode)
 
 ### CLI Flags
 
 **Global Flags:**
-- `-config` - Path to configuration file (default: "config.yaml") 
-- `-verbose` - Enable detailed logging output
+- `-config` / `--config` - Path to configuration file (default: `config.yaml` or fallback to `~/.config/conflux/config.yaml`)
+- `-verbose` / `-v` - Enable detailed logging output
 - `-help` - Show usage information
 
 **Sync Command Flags:**
-- `-docs` - Path to markdown documents directory (default: current directory)
+- `-docs` - Path to markdown documents directory (overrides config/project)
+- `-space` - Confluence space key (overrides project selection)
+- `-project` / `-P` - Project name to select (infers space & docs)
 - `-dry-run` - Preview changes without syncing to Confluence
 
 **List-Pages Command Flags:**
-- `-space` - Confluence space key (required)
+- `-space` - Confluence space key (optional if `--project` supplied)
 - `-parent` - Parent page title to start hierarchy from (optional)
+- `-project` / `-P` - Project name to infer space
 
 **Get-Page Command Flags:**
-- `-space` - Confluence space key (required)
-- `-page` - Page ID (numeric) or title (string) to fetch (required)
+- `-space` - Confluence space key (optional if `--project` supplied)
+- `-project` / `-P` - Project name to infer space
+- `-page` - Page ID or title (required)
 - `-format` - Output format: `storage` (default), `html`, or `markdown`
 
-**Note**: The `-docs` flag will override any `markdown_dir` specified in your config file, making it easy to work with different document directories.
+**Inspect Command Flags:**
+- `-space` - Confluence space key (optional if `--project` supplied)
+- `-project` / `-P` - Project name to infer space
+- `-page` - Page ID or title to start inspection (optional)
+- `-details` - Show detailed page info
+
+**Projects Command Flags:**
+- `--show-exclude` - Include exclude patterns for each project
+
+**Note**: The `-docs` flag overrides any `local.markdown_dir` from a project or top-level config.
 
 ## Troubleshooting
 
@@ -365,18 +447,14 @@ If images in your markdown aren't being uploaded or displayed correctly:
    ![Image](./images/diagram.png)  # Relative to markdown file location
    ![Image](/absolute/path/image.png)  # Absolute path
    ```
-
 2. **Verify file formats**: Ensure images use supported formats
    - Supported: PNG, JPG, JPEG, GIF, SVG, WEBP
    - Check configuration in `config.yaml` under `images.supported_formats`
-
 3. **Check file sizes**: Large files may be rejected
    - Default limit: 10MB
    - Configure in `config.yaml`: `images.max_file_size`
-
 4. **Review permissions**: Ensure your API token can upload attachments
    - Confluence admin permissions may be required for file uploads
-
 5. **Use verbose logging**: See detailed image processing information
    ```bash
    conflux sync -verbose -dry-run  # See what images are detected
@@ -391,19 +469,16 @@ If mermaid diagrams aren't being converted to images:
    npm install -g @mermaid-js/mermaid-cli
    mmdc --version  # Should show version number
    ```
-
 2. **Verify configuration**: Check your `config.yaml` has correct mermaid settings
    ```yaml
    mermaid:
      mode: "convert-to-image"
      format: "png"
    ```
-
 3. **Check dependencies**: Use verbose mode to see dependency check results
    ```bash
    conflux sync -verbose -dry-run
    ```
-
 4. **Fallback behavior**: If CLI is unavailable, Conflux automatically falls back to preserve mode
 
 ### Debug Output
@@ -441,6 +516,7 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 - **✅ Configurable image processing** - File size limits, supported formats, and future resizing options
 - **✅ Improved sync logic** - Post-processing now handles both images and mermaid diagrams efficiently
 - **✅ Comprehensive image validation** - Built-in checks for file existence, formats, and size limits
+- **✅ Multi-project configuration** - Added `projects` section + `--project` flag, project listing command, and space inference precedence
 
 ### v1.2.0
 - **✅ Mermaid.js diagram support** - Automatically process mermaid diagrams with two modes:

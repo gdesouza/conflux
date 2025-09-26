@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	space      string
-	parentPage string
+	space       string
+	parentPage  string
+	listProject string
 )
 
 // listPagesCmd represents the list-pages command
@@ -35,15 +36,25 @@ You can optionally specify a parent page to start the hierarchy from.`,
 }
 
 func runListPages(cmd *cobra.Command, args []string) error {
-	if space == "" {
-		return fmt.Errorf("space flag is required for list-pages command")
-	}
-
 	log := logger.New(verbose)
 
 	cfg, err := config.LoadForListPages(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Project selection if provided
+	if listProject != "" {
+		if err := cfg.SelectProject(listProject); err != nil {
+			return fmt.Errorf("failed to select project: %w", err)
+		}
+		if space == "" {
+			space = cfg.Confluence.SpaceKey
+		}
+	}
+
+	if space == "" {
+		return fmt.Errorf("space flag or --project required for list-pages command")
 	}
 
 	client := confluence.NewClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
@@ -106,12 +117,7 @@ func init() {
 	rootCmd.AddCommand(listPagesCmd)
 
 	// Local flags for list-pages command
-	listPagesCmd.Flags().StringVarP(&space, "space", "s", "", "Confluence space key (required)")
+	listPagesCmd.Flags().StringVarP(&space, "space", "s", "", "Confluence space key (can be inferred from --project)")
 	listPagesCmd.Flags().StringVarP(&parentPage, "parent", "p", "", "Parent page title to start from (optional)")
-
-	// Mark space as required
-	if err := listPagesCmd.MarkFlagRequired("space"); err != nil {
-		// This should not happen for a valid flag name, but handle it for linter
-		panic(fmt.Sprintf("Failed to mark space flag as required: %v", err))
-	}
+	listPagesCmd.Flags().StringVarP(&listProject, "project", "P", "", "Project name defined in config to infer space")
 }

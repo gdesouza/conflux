@@ -20,6 +20,7 @@ var (
 	detectRenames bool
 	docsDir       string
 	spaceKey      string
+	projectName   string
 )
 
 // syncCmd represents the sync command
@@ -30,7 +31,15 @@ var syncCmd = &cobra.Command{
 
 The sync command analyzes your markdown files, detects what has changed since the last sync,
 and displays a preview of what will be updated before proceeding. It maintains a local cache
-to track file changes and only updates pages that have actually been modified.`,
+to track file changes and only updates pages that have actually been modified.
+
+Space resolution precedence:
+  1. --space flag
+  2. --project flag (project's space)
+  3. First project in config (implicit default, if space unset)
+  4. Top-level confluence.space_key (legacy single-project)
+
+When a project is selected, its markdown directory overrides the global one unless explicitly overridden with --docs.`,
 	Example: `  conflux sync                                # Sync with change detection and confirmation
   conflux sync --dry-run                      # Preview changes without syncing  
   conflux sync --force                        # Skip confirmation prompts
@@ -70,14 +79,24 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Override space key if provided via CLI flag
+	// Project selection logic (applied before space override)
+	if projectName != "" {
+		if err := cfg.SelectProject(projectName); err != nil {
+			return fmt.Errorf("failed to select project: %w", err)
+		}
+	} else if cfg.Confluence.SpaceKey == "" && len(cfg.Projects) > 0 {
+		// Auto-apply default (first) project if no global space key
+		cfg.ApplyDefaultProject()
+	}
+
+	// Override space key if provided via CLI flag (takes highest precedence)
 	if spaceKey != "" {
 		cfg.Confluence.SpaceKey = spaceKey
 	}
 
-	// Validate that space key is available either from config or CLI
+	// Validate that space key is available either from config, project, or CLI
 	if cfg.Confluence.SpaceKey == "" {
-		return fmt.Errorf("space key is required: provide via config file or use --space flag")
+		return fmt.Errorf("space key is required: provide via config file, project, or use --space flag")
 	}
 
 	syncer := sync.New(cfg, log)
@@ -115,5 +134,6 @@ func init() {
 	syncCmd.Flags().BoolVar(&detectRenames, "detect-renames", false, "only run rename detection analysis without syncing")
 	syncCmd.Flags().BoolVar(&forceStubs, "force-stubs", false, "force regeneration of all directory stub pages")
 	syncCmd.Flags().StringVarP(&docsDir, "docs", "d", ".", "path to local markdown directory or single .md file")
-	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config file)")
+	syncCmd.Flags().StringVarP(&spaceKey, "space", "s", "", "Confluence space key (overrides config/project)")
+	syncCmd.Flags().StringVarP(&projectName, "project", "P", "", "Project name defined in config (selects space & docs dir)")
 }

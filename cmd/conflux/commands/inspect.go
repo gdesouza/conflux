@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	inspectSpace  string
-	inspectPage   string
-	showChildren  bool
-	showParents   bool
-	showDetails   bool
+	inspectSpace   string
+	inspectPage    string
+	showChildren   bool
+	showParents    bool
+	showDetails    bool
+	inspectProject string
 )
 
 // inspectCmd represents the inspect command
@@ -32,7 +33,7 @@ This command helps debug page relationships and hierarchy issues by showing:
   - Parent page chain (ancestors)
   - Page hierarchy visualization
 
-You can specify a page by title or ID to start inspection from that page.`,
+Provide a space via --space or a project via --project (space inferred). You can specify a page by title or ID to start inspection from that page; if omitted an overview of the space roots is shown.`,
 	Example: `  conflux inspect -space DOCS -page "My Page"        # Inspect by title
   conflux inspect -space DOCS -page "123456789"      # Inspect by ID  
   conflux inspect -space DOCS                       # Show space overview
@@ -41,15 +42,24 @@ You can specify a page by title or ID to start inspection from that page.`,
 }
 
 func runInspect(cmd *cobra.Command, args []string) error {
-	if inspectSpace == "" {
-		return fmt.Errorf("space flag is required for inspect command")
-	}
-
 	log := logger.New(verbose)
 
 	cfg, err := config.LoadForListPages(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Project selection if provided
+	if inspectProject != "" {
+		if err := cfg.SelectProject(inspectProject); err != nil {
+			return fmt.Errorf("failed to select project: %w", err)
+		}
+		if inspectSpace == "" {
+			inspectSpace = cfg.Confluence.SpaceKey
+		}
+	}
+	if inspectSpace == "" {
+		return fmt.Errorf("space flag or --project required for inspect command")
 	}
 
 	client := confluence.NewClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
@@ -61,7 +71,7 @@ func runInspect(cmd *cobra.Command, args []string) error {
 
 	// Try to find the page by ID or title
 	var targetPage *confluence.Page
-	
+
 	// Check if the input looks like a page ID (numeric)
 	if isNumeric(inspectPage) {
 		log.Debug("Attempting to find page by ID: %s", inspectPage)
@@ -102,16 +112,16 @@ func inspectSpaceOverview(client confluence.ConfluenceClient, spaceKey string) e
 	}
 
 	fmt.Printf("📊 Found %d root pages in space\n\n", len(pages))
-	
+
 	// Show hierarchy
 	printInspectPageTree(pages, 0, true)
-	
+
 	// Show summary
 	totalPages := countTotalPages(pages)
 	fmt.Printf("\n📈 Summary:\n")
 	fmt.Printf("   🌳 Root pages: %d\n", len(pages))
 	fmt.Printf("   📄 Total pages: %d\n", totalPages)
-	
+
 	return nil
 }
 
@@ -124,15 +134,15 @@ func inspectPageDetails(client confluence.ConfluenceClient, page *confluence.Pag
 	fmt.Printf("   🆔 ID: %s\n", page.ID)
 	fmt.Printf("   📝 Title: %s\n", page.Title)
 	fmt.Printf("   🏢 Space: %s\n", spaceKey)
-	
+
 	if showDetails {
 		contentLength := len(page.Body.Storage.Value)
 		fmt.Printf("   📊 Content Length: %d characters\n", contentLength)
-		
+
 		// Check for children macro
 		hasChildrenMacro := strings.Contains(page.Body.Storage.Value, "ac:name=\"children\"")
 		fmt.Printf("   🔗 Has Children Macro: %v\n", hasChildrenMacro)
-		
+
 		if hasChildrenMacro {
 			fmt.Printf("   ℹ️  This appears to be a directory page\n")
 		}
@@ -147,10 +157,10 @@ func inspectPageDetails(client confluence.ConfluenceClient, page *confluence.Pag
 		fmt.Printf("   🏠 This is a root page (no parents)\n")
 	} else {
 		for i, ancestor := range ancestors {
-			fmt.Printf("   %s 📁 %s (ID: %s)\n", 
+			fmt.Printf("   %s 📁 %s (ID: %s)\n",
 				strings.Repeat("  ", i), ancestor.Title, ancestor.ID)
 		}
-		fmt.Printf("   %s 📄 %s (ID: %s) ← Current Page\n", 
+		fmt.Printf("   %s 📄 %s (ID: %s) ← Current Page\n",
 			strings.Repeat("  ", len(ancestors)), page.Title, page.ID)
 	}
 
@@ -227,14 +237,10 @@ func init() {
 	rootCmd.AddCommand(inspectCmd)
 
 	// Local flags for inspect command
-	inspectCmd.Flags().StringVarP(&inspectSpace, "space", "s", "", "Confluence space key (required)")
+	inspectCmd.Flags().StringVarP(&inspectSpace, "space", "s", "", "Confluence space key (can be inferred from --project)")
 	inspectCmd.Flags().StringVarP(&inspectPage, "page", "p", "", "Page title or ID to inspect (optional, shows space overview if omitted)")
 	inspectCmd.Flags().BoolVar(&showChildren, "children", true, "Show children pages (default: true)")
 	inspectCmd.Flags().BoolVarP(&showParents, "parents", "a", true, "Show parent chain/ancestors (default: true)")
 	inspectCmd.Flags().BoolVarP(&showDetails, "details", "d", false, "Show detailed page information")
-
-	// Mark space as required
-	if err := inspectCmd.MarkFlagRequired("space"); err != nil {
-		panic(fmt.Sprintf("Failed to mark space flag as required: %v", err))
-	}
+	inspectCmd.Flags().StringVarP(&inspectProject, "project", "P", "", "Project name defined in config to infer space")
 }
