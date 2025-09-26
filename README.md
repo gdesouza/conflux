@@ -385,6 +385,65 @@ conflux inspect --project core -page "Architecture"
 - `get-page` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
 - `inspect` - Inspect page hierarchy and relationships
 - `projects` - List configured projects (multi-project mode)
+- `configure` - Create or edit the configuration file (interactive or scripted)
+
+### Configure Command
+
+The `configure` command helps you create or update a `config.yaml` either interactively (guided prompts) or non-interactively for automation (CI/CD, scripting).
+
+Interactive mode (default when no non-interactive flags provided):
+```bash
+conflux configure
+```
+Provides prompts for Confluence credentials, optional multi-project setup, Mermaid, and Images settings. Existing values are shown as defaults if a config already exists.
+
+Non-interactive scripted usage:
+```bash
+# Create or update config without prompts
+conflux configure \
+  --non-interactive --yes \
+  --set confluence.base_url=https://your.atlassian.net/wiki \
+  --set confluence.username=you@company.com \
+  --set confluence.api_token=$ATLASSIAN_TOKEN \
+  --set mermaid.mode=preserve \
+  --add-project "name=core,space_key=CORE,markdown_dir=./core-docs" \
+  --add-project "name=platform,space_key=PLAT,markdown_dir=./platform-docs,exclude=README.md" \
+  --config ./config.yaml
+```
+
+Print resulting YAML instead of writing (preview / generate for pipelines):
+```bash
+conflux configure --non-interactive --yes \
+  --set confluence.base_url=https://your.atlassian.net/wiki \
+  --set confluence.username=ci-bot \
+  --set confluence.api_token=$ATLASSIAN_TOKEN \
+  --add-project "name=docs,space_key=DOCS,markdown_dir=./docs" \
+  --print
+```
+
+Remove or replace projects:
+```bash
+# Replace existing project definition (same name overwrites)
+conflux configure --non-interactive --yes \
+  --add-project "name=docs,space_key=DOCS,markdown_dir=./documentation" \
+  --config config.yaml
+
+# Remove a project
+conflux configure --non-interactive --yes \
+  --remove-project docs \
+  --config config.yaml
+```
+
+Supported `--set` keys (dotted paths):
+- confluence.base_url, confluence.username, confluence.api_token, confluence.space_key
+- local.markdown_dir, local.exclude (comma list)
+- mermaid.mode, mermaid.format, mermaid.cli_path, mermaid.theme, mermaid.width, mermaid.height, mermaid.scale
+- images.supported_formats (comma list), images.max_file_size, images.resize_large, images.max_width, images.max_height
+
+Notes:
+- When `projects` are defined, top-level `confluence.space_key` becomes optional (space inferred by `--project`).
+- `--yes` auto-confirms saving (otherwise a confirmation prompt appears in interactive mode).
+- `--print` skips writing the file—useful for generating config in CI or diffing.
 
 ### CLI Flags
 
