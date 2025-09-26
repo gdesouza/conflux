@@ -67,7 +67,7 @@ func runGetPage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("space flag or --project required for get-page command")
 	}
 
-	client := confluence.NewClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
+	client := newConfluenceClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
 
 	var page *confluence.Page
 
