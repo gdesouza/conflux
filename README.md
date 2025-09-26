@@ -279,6 +279,27 @@ conflux sync -docs ./my-docs -config prod-config.yaml -dry-run -verbose
 
 ### List Pages Command
 
+### Get Page Command
+
+```bash
+# Fetch a page by numeric ID (storage format by default)
+conflux get-page -space DOCS -page 123456789
+
+# Fetch by title (quotes recommended for multi-word titles)
+conflux get-page -space DOCS -page "Getting Started"
+
+# Output rendered HTML view (if available) instead of storage format
+conflux get-page -space DOCS -page 123456789 -format html
+
+# Convert to Markdown (best-effort HTML -> Markdown conversion)
+conflux get-page -space DOCS -page 123456789 -format markdown
+```
+
+Supported formats:
+- storage (default) – raw Confluence storage format XML/HTML
+- html – rendered page HTML (falls back to storage if view not available)
+- markdown – converts rendered HTML (or storage) to Markdown
+
 ```bash
 # List all pages in a space
 conflux list-pages -space DOCS
@@ -294,6 +315,7 @@ conflux list-pages -config prod-config.yaml -space TEAM -verbose
 
 - `sync` - Sync local markdown files to Confluence (default command)
 - `list-pages` - List page hierarchy from a Confluence space
+- `get-page` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
 
 ### CLI Flags
 
@@ -309,6 +331,11 @@ conflux list-pages -config prod-config.yaml -space TEAM -verbose
 **List-Pages Command Flags:**
 - `-space` - Confluence space key (required)
 - `-parent` - Parent page title to start hierarchy from (optional)
+
+**Get-Page Command Flags:**
+- `-space` - Confluence space key (required)
+- `-page` - Page ID (numeric) or title (string) to fetch (required)
+- `-format` - Output format: `storage` (default), `html`, or `markdown`
 
 **Note**: The `-docs` flag will override any `markdown_dir` specified in your config file, making it easy to work with different document directories.
 

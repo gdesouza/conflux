@@ -48,6 +48,9 @@ type Page struct {
 		Storage struct {
 			Value string `json:"value"`
 		} `json:"storage"`
+		View struct {
+			Value string `json:"value"`
+		} `json:"view"`
 	} `json:"body,omitempty"`
 	Space struct {
 		Key string `json:"key"`
@@ -267,7 +270,7 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 }
 
 func (c *Client) GetPage(pageID string) (*Page, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"?expand=version", nil)
+	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"?expand=version,body.storage,body.view", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
