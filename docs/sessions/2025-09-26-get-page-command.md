@@ -2,6 +2,7 @@
 **Date**: 2025-09-26
 **Duration**: ~1 hour
 **Participants**: User, AI Assistant
+**AI Model**: OpenAI-based coding assistant (context-aware session continuation)
 
 ## Objectives
 - Add `get-page` CLI command to retrieve Confluence page content
@@ -63,6 +64,15 @@ No configuration schema changes were required for this feature.
 - Potential enhancement: Add `--output` flag to write content to a file.
 
 ## Next Steps
+- Add `body.view` expansion to `FindPageByTitle` for consistent HTML/markdown output.
+- Introduce `--output <file>` flag to write retrieved content to disk.
+- Add end-to-end command tests using a mock Confluence client interface.
+- Implement macro normalization rules pre-markdown conversion (e.g., converting common Confluence macros to markdown hints or fenced blocks).
+- Consider adding a `--select body.{storage|view}` low-level debug flag.
+- Refine `isNumeric` to reject negatives if Confluence IDs are always positive.
+- Add optional rate limiting or retry/backoff strategy for chained page fetches.
+- Provide JSON output format (`--format json`) containing title, id, and all bodies for scripting.
+- Evaluate caching layer for repeated `get-page` calls in batch scripts.
 - Extend title-based lookup to also request `body.view`.
 - Add integration-style tests for end-to-end command execution with mock client interface.
 - Evaluate adding macro normalization for improved markdown export fidelity.

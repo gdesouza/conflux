@@ -26,6 +26,7 @@ Examples:
 **Date**: YYYY-MM-DD
 **Duration**: ~X hours
 **Participants**: [List of participants]
+**AI Model**: [If AI assistant involved, specify model/agent name]
 
 ## Objectives
 - [Primary goal 1]
@@ -85,6 +86,7 @@ Examples:
 3. **Focus on decisions**: Emphasize why choices were made, not just what was done
 4. **Include lessons learned**: Help future development avoid pitfalls
 5. **Reference commits**: Link to relevant git commits for detailed code changes
+6. **Record AI model**: If an AI assistant participated, include an `AI Model` line near the top for provenance
 
 ## Integration with Git
 
