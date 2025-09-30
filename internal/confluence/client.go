@@ -576,6 +576,8 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 				}
 				return attachment, nil
 			}
+			// If finding the attachment fails, we still return the original error
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 	}

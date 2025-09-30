@@ -23,17 +23,14 @@ type mockHTTPClient struct {
 func (m *mockHTTPClient) RoundTrip(req *http.Request) (*http.Response, error) {
 	m.requests = append(m.requests, req)
 
-	// Create multiple possible keys for matching
-	keys := []string{
-		fmt.Sprintf("%s %s", req.Method, req.URL.Path),
-		fmt.Sprintf("%s %s", req.Method, req.URL.String()), // With query params
+	// Try to find a matching response using the full URL first
+	if response, exists := m.responses[fmt.Sprintf("%s %s", req.Method, req.URL.String())]; exists {
+		return response, nil
 	}
 
-	// Try to find a matching response
-	for _, key := range keys {
-		if response, exists := m.responses[key]; exists {
-			return response, nil
-		}
+	// Fallback to checking just the path
+	if response, exists := m.responses[fmt.Sprintf("%s %s", req.Method, req.URL.Path)]; exists {
+		return response, nil
 	}
 
 	// Also check for partial path matches for the API paths
