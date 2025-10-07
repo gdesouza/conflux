@@ -69,9 +69,11 @@ type PageInfo struct {
 type Attachment struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
-	Filename  string `json:"filename,omitempty"`
-	Size      int64  `json:"size,omitempty"`
-	MediaType string `json:"mediaType,omitempty"`
+	MediaType string `json:"mediaType"`
+	Download  string `json:"downloadLink"`
+	Links     struct {
+		Download string `json:"download"`
+	} `json:"_links"`
 }
 
 func New(baseURL, username, apiToken string) *Client {
@@ -574,6 +576,8 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 				}
 				return attachment, nil
 			}
+			// If finding the attachment fails, we still return the original error
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
 	}
@@ -595,6 +599,36 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 	}
 
 	return &result.Results[0], nil
+}
+
+// ListAttachments returns all attachments for a page
+func (c *Client) ListAttachments(pageID string) ([]Attachment, error) {
+	// v2 API endpoint
+	req, err := http.NewRequest("GET", c.baseURL+"/api/v2/pages/"+pageID+"/attachments", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.SetBasicAuth(c.username, c.apiToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Results []Attachment `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result.Results, nil
 }
 
 // findAttachmentByFilename looks for an existing attachment with the given filename on a page
@@ -636,37 +670,27 @@ func (c *Client) findAttachmentByFilename(pageID, filename string) (*Attachment,
 }
 
 func (c *Client) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/rest/api/content/"+pageID+"/child/attachment/"+attachmentID, nil)
+	attachments, err := c.ListAttachments(pageID)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", err
 	}
+	for _, att := range attachments {
+		if att.ID == attachmentID {
+			if att.Links.Download != "" {
+				return c.baseURL + att.Links.Download, nil
+			}
+			if att.Download != "" {
+				return c.baseURL + att.Download, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("attachment %s not found for page %s", attachmentID, pageID)
+}
 
+// DoAuthenticatedRequest performs an HTTP request with Confluence authentication
+func (c *Client) DoAuthenticatedRequest(req *http.Request) (*http.Response, error) {
 	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
-	}
-
-	var result struct {
-		Links struct {
-			Download string `json:"download"`
-		} `json:"_links"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// The download URL is relative, need to make it absolute
-	downloadURL := c.baseURL + result.Links.Download
-	return downloadURL, nil
+	return c.client.Do(req)
 }
 
 // Helper functions for debug logging

@@ -2,7 +2,7 @@ package logger
 
 import (
 	"bytes"
-	"log"
+
 	"os"
 	"strings"
 	"testing"
@@ -26,19 +26,6 @@ func TestNew(t *testing.T) {
 	if loggerVerbose.verbose != true {
 		t.Error("Expected verbose to be true")
 	}
-}
-
-func captureLogOutput(fn func()) string {
-	var buf bytes.Buffer
-	originalOutput := log.Writer()
-	log.SetOutput(&buf)
-
-	defer func() {
-		log.SetOutput(originalOutput)
-	}()
-
-	fn()
-	return buf.String()
 }
 
 func TestInfo(t *testing.T) {

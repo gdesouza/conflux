@@ -21,10 +21,14 @@ type ConfluenceClient interface {
 	UpdatePage(pageID, title, content string) (*confluence.Page, error)
 	FindPageByTitle(spaceKey, title string) (*confluence.Page, error)
 	GetPage(pageID string) (*confluence.Page, error)
-	UploadAttachment(pageID, filePath, contentType string) (*confluence.Attachment, error)
+	UploadAttachment(pageID, filePath string) (*confluence.Attachment, error)
+	ListAttachments(pageID string) ([]confluence.Attachment, error)
+	GetAttachmentDownloadURL(pageID, attachmentID string) (string, error)
 }
 
 type mockConfluenceClient struct {
+	attachments map[string][]confluence.Attachment // pageID -> attachments
+
 	pages            map[string]*confluence.Page // title -> page
 	archivedPages    map[string]bool             // pageID -> archived status
 	forbiddenUpdates map[string]bool             // pageID -> forbidden to update
@@ -125,6 +129,19 @@ func (m *mockConfluenceClient) UploadAttachment(pageID, filePath string) (*confl
 		ID:    fmt.Sprintf("attachment-%s", pageID),
 		Title: filepath.Base(filePath),
 	}, nil
+}
+
+func (m *mockConfluenceClient) ListAttachments(pageID string) ([]confluence.Attachment, error) {
+	// Return empty slice or mock attachments
+	if m.attachments != nil {
+		return m.attachments[pageID], nil
+	}
+	return []confluence.Attachment{}, nil
+}
+
+func (m *mockConfluenceClient) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {
+	// Return a dummy URL
+	return "https://mocked-url/" + pageID + "/" + attachmentID, nil
 }
 
 func (m *mockConfluenceClient) GetPageHierarchy(spaceKey, parentPageTitle string) ([]confluence.PageInfo, error) {

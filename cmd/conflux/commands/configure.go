@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -565,13 +564,4 @@ func floatToStringOr(v float64, fallback float64) string {
 		return fmt.Sprintf("%.2f", fallback)
 	}
 	return fmt.Sprintf("%.2f", v)
-}
-
-// For potential future scripted stdin (not used now but handy)
-func readLine(scanner *bufio.Scanner, prompt string) string {
-	fmt.Print(prompt)
-	if !scanner.Scan() {
-		return ""
-	}
-	return strings.TrimSpace(scanner.Text())
 }

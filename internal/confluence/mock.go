@@ -95,4 +95,13 @@ func (m *MockClient) GetChildPages(pageID string) ([]PageInfo, error) {
 	return m.Children[pageID], nil
 }
 
+func (m *MockClient) ListAttachments(pageID string) ([]Attachment, error) {
+	return m.Attachments[pageID], nil
+}
+
+func (m *MockClient) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {
+	// Return a dummy local path for testing
+	return "attachments/" + attachmentID, nil
+}
+
 var _ ConfluenceClient = (*MockClient)(nil)

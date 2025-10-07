@@ -4,8 +4,6 @@ linters-settings:
       - standard
       - default
       - prefix(conflux)
-  govet:
-    check-shadowing: true
   misspell:
     locale: US
 

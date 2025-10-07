@@ -11,6 +11,8 @@ type ConfluenceClient interface {
 	GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageInfo, error)
 	GetPageAncestors(pageID string) ([]PageInfo, error)
 	GetChildPages(pageID string) ([]PageInfo, error)
+	ListAttachments(pageID string) ([]Attachment, error)
+	GetAttachmentDownloadURL(pageID, attachmentID string) (string, error)
 }
 
 // Ensure Client implements the interface

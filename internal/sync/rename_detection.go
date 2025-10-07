@@ -2,13 +2,15 @@ package sync
 
 import (
 	"fmt"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"sort"
 	"strings"
 )
 
 // RenameDetection represents a detected page/folder rename situation
 type RenameDetection struct {
-	Type           string // "page" or "directory" 
+	Type           string // "page" or "directory"
 	LocalPath      string // Current local path/title
 	ExpectedTitle  string // What Conflux expects based on local structure
 	ActualTitle    string // What exists in Confluence
@@ -21,9 +23,9 @@ type RenameDetection struct {
 // DetectRenames analyzes the sync plan and detects potential rename issues
 func (s *Syncer) DetectRenames(pages []PageSyncInfo) ([]RenameDetection, error) {
 	var detections []RenameDetection
-	
+
 	s.logger.Debug("Running rename detection analysis...")
-	
+
 	// Check directory renames
 	for _, page := range pages {
 		if page.IsDirectory {
@@ -38,11 +40,11 @@ func (s *Syncer) DetectRenames(pages []PageSyncInfo) ([]RenameDetection, error) 
 			}
 		}
 	}
-	
+
 	// Check for orphaned pages (cached pages that don't match current structure)
 	orphanDetections := s.checkOrphanedPages(pages)
 	detections = append(detections, orphanDetections...)
-	
+
 	s.logger.Debug("Rename detection found %d potential issues", len(detections))
 	return detections, nil
 }
@@ -53,14 +55,14 @@ func (s *Syncer) checkDirectoryRename(page PageSyncInfo) *RenameDetection {
 	if cachedPageID == "" {
 		return nil // No cached page, not a rename
 	}
-	
+
 	// Get the actual page from Confluence
 	existingPage, err := s.confluence.GetPage(cachedPageID)
 	if err != nil {
 		s.logger.Debug("Could not retrieve page for rename check: %s", cachedPageID)
 		return nil
 	}
-	
+
 	// Compare expected title vs actual title
 	if existingPage.Title != page.Title {
 		// Get cached title if available
@@ -68,17 +70,17 @@ func (s *Syncer) checkDirectoryRename(page PageSyncInfo) *RenameDetection {
 		if metadata, exists := s.metadata.Directories[page.FilePath]; exists {
 			cachedTitle = metadata.Title
 		}
-		
+
 		severity := "warning"
-		recommendation := fmt.Sprintf("Directory renamed from '%s' to '%s'. Children macro may not work properly.", 
+		recommendation := fmt.Sprintf("Directory renamed from '%s' to '%s'. Children macro may not work properly.",
 			existingPage.Title, page.Title)
-			
+
 		// If there are many children, this becomes critical
 		if s.hasChildPages(cachedPageID) {
 			severity = "critical"
 			recommendation += " Consider manually moving child pages or clearing cache."
 		}
-		
+
 		return &RenameDetection{
 			Type:           "directory",
 			LocalPath:      page.FilePath,
@@ -90,7 +92,7 @@ func (s *Syncer) checkDirectoryRename(page PageSyncInfo) *RenameDetection {
 			Recommendation: recommendation,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -100,14 +102,14 @@ func (s *Syncer) checkPageRename(page PageSyncInfo) *RenameDetection {
 	if cachedPageID == "" {
 		return nil // No cached page, not a rename
 	}
-	
+
 	// Get the actual page from Confluence
 	existingPage, err := s.confluence.GetPage(cachedPageID)
 	if err != nil {
 		s.logger.Debug("Could not retrieve page for rename check: %s", cachedPageID)
 		return nil
 	}
-	
+
 	// Compare expected title vs actual title
 	if existingPage.Title != page.Title {
 		// Get cached title if available
@@ -115,23 +117,23 @@ func (s *Syncer) checkPageRename(page PageSyncInfo) *RenameDetection {
 		if metadata, exists := s.metadata.Files[page.FilePath]; exists {
 			cachedTitle = metadata.Title
 		}
-		
+
 		// Determine if rename was local or remote
 		var recommendation string
 		if cachedTitle == page.Title {
 			// Local title matches cache, so rename happened in Confluence
-			recommendation = fmt.Sprintf("Page renamed in Confluence from '%s' to '%s'. Conflux will preserve the Confluence title.", 
+			recommendation = fmt.Sprintf("Page renamed in Confluence from '%s' to '%s'. Conflux will preserve the Confluence title.",
 				page.Title, existingPage.Title)
 		} else if cachedTitle == existingPage.Title {
-			// Confluence title matches cache, so rename happened locally  
-			recommendation = fmt.Sprintf("Page renamed locally from '%s' to '%s'. Conflux will update the Confluence page title.", 
+			// Confluence title matches cache, so rename happened locally
+			recommendation = fmt.Sprintf("Page renamed locally from '%s' to '%s'. Conflux will update the Confluence page title.",
 				existingPage.Title, page.Title)
 		} else {
 			// Both sides changed - conflict situation
-			recommendation = fmt.Sprintf("Title conflict detected. Local: '%s', Confluence: '%s', Cached: '%s'. Manual resolution may be needed.", 
+			recommendation = fmt.Sprintf("Title conflict detected. Local: '%s', Confluence: '%s', Cached: '%s'. Manual resolution may be needed.",
 				page.Title, existingPage.Title, cachedTitle)
 		}
-		
+
 		return &RenameDetection{
 			Type:           "page",
 			LocalPath:      page.FilePath,
@@ -143,20 +145,20 @@ func (s *Syncer) checkPageRename(page PageSyncInfo) *RenameDetection {
 			Recommendation: recommendation,
 		}
 	}
-	
+
 	return nil
 }
 
 // checkOrphanedPages finds pages in cache that no longer exist locally
 func (s *Syncer) checkOrphanedPages(pages []PageSyncInfo) []RenameDetection {
 	var detections []RenameDetection
-	
+
 	// Build set of current local paths
 	localPaths := make(map[string]bool)
 	for _, page := range pages {
 		localPaths[page.FilePath] = true
 	}
-	
+
 	// Check cached files that are no longer local
 	for filePath, metadata := range s.metadata.Files {
 		if !localPaths[filePath] {
@@ -173,7 +175,7 @@ func (s *Syncer) checkOrphanedPages(pages []PageSyncInfo) []RenameDetection {
 			})
 		}
 	}
-	
+
 	// Check cached directories that are no longer local
 	for dirPath, metadata := range s.metadata.Directories {
 		if !localPaths[dirPath] {
@@ -190,7 +192,7 @@ func (s *Syncer) checkOrphanedPages(pages []PageSyncInfo) []RenameDetection {
 			})
 		}
 	}
-	
+
 	return detections
 }
 
@@ -205,7 +207,7 @@ func (s *Syncer) DisplayRenameDetections(detections []RenameDetection) {
 	if len(detections) == 0 {
 		return
 	}
-	
+
 	// Sort by severity (critical first, then warnings)
 	sort.Slice(detections, func(i, j int) bool {
 		if detections[i].Severity != detections[j].Severity {
@@ -213,23 +215,23 @@ func (s *Syncer) DisplayRenameDetections(detections []RenameDetection) {
 		}
 		return detections[i].LocalPath < detections[j].LocalPath
 	})
-	
+
 	fmt.Println()
 	fmt.Println("🔍 Rename Detection Analysis:")
 	fmt.Println(strings.Repeat("=", 50))
-	
+
 	criticalCount := 0
 	warningCount := 0
-	
+
 	for i, detection := range detections {
 		if detection.Severity == "critical" {
 			criticalCount++
-			fmt.Printf("🚨 CRITICAL #%d: %s Rename Detected\n", criticalCount, strings.Title(detection.Type))
+			fmt.Printf("🚨 CRITICAL #%d: %s Rename Detected\n", criticalCount, cases.Title(language.English).String(detection.Type))
 		} else {
 			warningCount++
-			fmt.Printf("⚠️  WARNING #%d: %s Rename Detected\n", warningCount, strings.Title(detection.Type))
+			fmt.Printf("⚠️  WARNING #%d: %s Rename Detected\n", warningCount, cases.Title(language.English).String(detection.Type))
 		}
-		
+
 		fmt.Printf("   📁 Local Path: %s\n", detection.LocalPath)
 		if detection.ExpectedTitle != "" {
 			fmt.Printf("   📝 Expected Title: %s\n", detection.ExpectedTitle)
@@ -240,15 +242,15 @@ func (s *Syncer) DisplayRenameDetections(detections []RenameDetection) {
 		}
 		fmt.Printf("   🔗 Page ID: %s\n", detection.PageID)
 		fmt.Printf("   💡 %s\n", detection.Recommendation)
-		
+
 		if i < len(detections)-1 {
 			fmt.Println()
 		}
 	}
-	
+
 	fmt.Println()
 	fmt.Printf("📊 Summary: %d critical issues, %d warnings detected\n", criticalCount, warningCount)
-	
+
 	if criticalCount > 0 {
 		fmt.Println()
 		fmt.Println("🎯 Recommended Actions:")
@@ -257,6 +259,6 @@ func (s *Syncer) DisplayRenameDetections(detections []RenameDetection) {
 		fmt.Println("3. Consider manually fixing page relationships in Confluence")
 		fmt.Println("4. Or clear cache with 'rm -rf .conflux/' and re-sync")
 	}
-	
+
 	fmt.Println()
 }

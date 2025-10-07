@@ -543,7 +543,7 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 	}
 
 	// Determine the filename to use for the attachment reference
-	filename := attachment.Filename
+	filename := attachment.Title
 	if filename == "" {
 		// Fallback to the generated filename if Confluence API doesn't return it
 		filename = result.Filename
@@ -564,7 +564,7 @@ func processMermaidDiagram(content string, cfg *config.Config, client *confluenc
 func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, client *confluence.Client, pageID string, markdownFilePath string) (string, error) {
 	// Process mermaid diagrams first
 	content := ConvertToConfluenceFormatWithMermaid(markdown, cfg, client, pageID)
-	
+
 	// Now process images if we have the necessary components
 	if cfg == nil || client == nil || pageID == "" || markdownFilePath == "" {
 		// No image processing possible - return content as-is
@@ -573,10 +573,10 @@ func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, cl
 
 	// Create image processor
 	imageProcessor := images.NewProcessor(&cfg.Images, nil)
-	
+
 	// Get directory of the markdown file to resolve relative image paths
 	markdownDir := filepath.Dir(markdownFilePath)
-	
+
 	// Find image references in the original markdown content
 	imageRefs, err := imageProcessor.FindImageReferences(markdown, markdownDir)
 	if err != nil {
@@ -606,7 +606,7 @@ func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, cl
 		}
 
 		// Determine the filename for the attachment reference
-		filename := attachment.Filename
+		filename := attachment.Title
 		if filename == "" {
 			filename = attachment.Title
 		}
@@ -616,7 +616,7 @@ func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, cl
 
 		// Replace the markdown image syntax with Confluence image macro
 		confluenceImageMacro := fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
-		
+
 		// Replace in the content (note: we're working with already processed content that may have HTML)
 		// We need to be careful to replace the original markdown syntax, not HTML
 		content = strings.ReplaceAll(content, ref.MarkdownSyntax, confluenceImageMacro)

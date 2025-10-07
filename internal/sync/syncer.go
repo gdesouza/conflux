@@ -279,11 +279,11 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 		s.logger.Info("Directory page already exists (ID: %s), updating content: %s", existingPage.ID, existingPage.Title)
 		s.logger.Debug("Existing page content length: %d bytes", len(existingPage.Body.Storage.Value))
 		s.logger.Debug("New stub content length: %d bytes", len(content))
-		
+
 		// Use the existing page's current title instead of the generated title to preserve user renames
 		actualTitle := existingPage.Title
 		s.logger.Debug("Using existing page title '%s' instead of generated title '%s'", actualTitle, title)
-		
+
 		// Update content with the actual page title
 		content = fmt.Sprintf(`<h1>%s</h1>
 <p>This section contains documentation for %s. The pages below are automatically listed and updated whenever child pages are added or modified.</p>
@@ -295,7 +295,7 @@ func (s *Syncer) createDirectoryPage(dirPath, parentDirPath string, directoryPag
 </ac:structured-macro>
 
 <p><em>This page was automatically created by <a href="https://github.com/gdesouza/conflux">Conflux</a> to organize documentation hierarchy.</em></p>`, actualTitle, dirName)
-		
+
 		// Update the existing directory page with new content (preserve the existing title)
 		s.logger.Debug("Attempting to update page ID: %s with new content", existingPage.ID)
 		var updatedPage *confluence.Page
@@ -838,7 +838,7 @@ func (s *Syncer) DetectRenamesOnly() error {
 
 	if len(renameDetections) == 0 {
 		fmt.Println("✅ No rename issues detected!")
-		fmt.Printf("📊 Analyzed %d files and %d directories - all titles match expectations.\n", 
+		fmt.Printf("📊 Analyzed %d files and %d directories - all titles match expectations.\n",
 			len(files), len(s.extractDirectories(files)))
 	} else {
 		s.DisplayRenameDetections(renameDetections)
@@ -938,10 +938,10 @@ func (s *Syncer) processImagesWithTracking(content, pageID, filePath string) (st
 	} else {
 		// Create image processor
 		imageProcessor := images.NewProcessor(&s.config.Images, s.logger)
-		
+
 		// Get directory of the markdown file to resolve relative image paths
 		markdownDir := filepath.Dir(filePath)
-		
+
 		// Find image references in the original markdown content
 		imageRefs, err := imageProcessor.FindImageReferences(content, markdownDir)
 		if err != nil {
@@ -958,7 +958,7 @@ func (s *Syncer) processImagesWithTracking(content, pageID, filePath string) (st
 		updatedContent := content
 		for _, ref := range validRefs {
 			filename := images.GetImageFilename(ref.AbsolutePath)
-			
+
 			// Calculate hash of the image file
 			currentHash, err := images.CalculateImageHash(ref.AbsolutePath)
 			if err != nil {
@@ -984,7 +984,7 @@ func (s *Syncer) processImagesWithTracking(content, pageID, filePath string) (st
 			}
 
 			// Determine the filename for the attachment reference
-			attachmentFilename := attachment.Filename
+			attachmentFilename := attachment.Title
 			if attachmentFilename == "" {
 				attachmentFilename = attachment.Title
 			}
@@ -1038,12 +1038,12 @@ func (s *Syncer) findPageWithFallback(originalName, cachedPageID string) (*confl
 		s.logger.Debug("Trying cached page ID lookup: %s", cachedPageID)
 		if existingPage, err := s.confluence.GetPage(cachedPageID); err == nil && existingPage != nil {
 			s.logger.Debug("Found page via cached ID: %s", existingPage.Title)
-			
+
 			// Check if page title has changed and log it
 			if existingPage.Title != originalName {
 				s.logger.Info("Page title has changed from '%s' to '%s' (ID: %s)", originalName, existingPage.Title, existingPage.ID)
 			}
-			
+
 			return existingPage, nil
 		}
 		s.logger.Debug("Cached page ID lookup failed, trying title variations")
