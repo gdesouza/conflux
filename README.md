@@ -366,6 +366,38 @@ Supported formats:
 - html – rendered page HTML (falls back to storage if view not available)
 - markdown – converts rendered HTML (or storage) to Markdown
 
+### Upload Command
+```bash
+# Create a new page from a single markdown file
+conflux upload -file ./docs/intro.md -space DOCS
+
+# Update an existing page (matched by top-level markdown heading)
+conflux upload -f ./docs/intro.md -space DOCS
+
+# Specify a parent page by numeric ID
+conflux upload -f ./docs/feature.md -space DOCS -parent 123456789
+
+# Or specify parent by title (resolved in the target space)
+conflux upload -f ./docs/advanced/optimizer.md -space DOCS -parent "Architecture"
+
+# Use project inference (space comes from project config)
+conflux upload -f ./docs/core/overview.md --project core
+```
+Behavior:
+- Determines the Confluence page title from the first level-1 markdown heading (`# Title`).
+- If a page with that title already exists in the resolved space it is updated; otherwise it is created.
+- Parent page may be provided as a numeric ID or as a title (looked up in the target space).
+- Space resolution precedence matches other commands: `--space` > `--project` > default project > legacy top-level `space_key`.
+
+Current limitations:
+- The `upload` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
+
+Flags:
+- `--file` / `-f` (required) – Path to a single markdown file.
+- `--space` / `-s` – Confluence space key (optional if `--project` supplied or default project provides one).
+- `--project` / `-P` – Project name defined in config to infer space.
+- `--parent` / `-p` – Optional parent page title or numeric ID.
+
 ### Inspect Command
 ```bash
 # Space overview
@@ -384,6 +416,7 @@ conflux inspect --project core -page "Architecture"
 - `list-pages` - List page hierarchy from a Confluence space
 - `get-page` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
 - `inspect` - Inspect page hierarchy and relationships
+- `upload` - Create or update a single markdown file as a Confluence page
 - `projects` - List configured projects (multi-project mode)
 - `configure` - Create or edit the configuration file (interactive or scripted)
 
@@ -468,6 +501,12 @@ Notes:
 - `-project` / `-P` - Project name to infer space
 - `-page` - Page ID or title (required)
 - `-format` - Output format: `storage` (default), `html`, or `markdown`
+
+**Upload Command Flags:**
+- `-file` / `-f` - Path to markdown file (required)
+- `-space` / `-s` - Confluence space key (optional if `--project` supplied)
+- `-project` / `-P` - Project name to infer space
+- `-parent` / `-p` - Parent page title or numeric ID (optional)
 
 **Inspect Command Flags:**
 - `-space` - Confluence space key (optional if `--project` supplied)
@@ -565,6 +604,7 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 ## Recent Improvements
 
 ### v1.3.0 (Latest)
+- **✅ Upload command** - Added `upload` for quickly creating/updating a single markdown file as a Confluence page
 - **✅ Image attachment support** - Automatically detect and upload images referenced in markdown files
   - **Automatic detection**: Finds `![alt](image.png)` syntax in markdown content
   - **Multiple formats**: Support for PNG, JPG, JPEG, GIF, SVG, and WEBP images
