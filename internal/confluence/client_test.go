@@ -28,16 +28,35 @@ func (m *mockHTTPClient) RoundTrip(req *http.Request) (*http.Response, error) {
 		return response, nil
 	}
 
-	// Fallback to checking just the path
+	// Try to match method + path + query exactly (if present)
+	pathWithQuery := req.URL.Path
+	tq := req.URL.RawQuery
+	if tq != "" {
+		pathWithQuery = pathWithQuery + "?" + tq
+	}
+	if response, exists := m.responses[fmt.Sprintf("%s %s", req.Method, pathWithQuery)]; exists {
+		return response, nil
+	}
+
+	// Fallback to checking just the path (method + path)
 	if response, exists := m.responses[fmt.Sprintf("%s %s", req.Method, req.URL.Path)]; exists {
 		return response, nil
 	}
 
-	// Also check for partial path matches for the API paths
+	// Also check for partial path matches for the API paths, but prefer
+	// stored entries that include query when the request has a query
 	for storedKey, response := range m.responses {
-		if strings.Contains(storedKey, req.URL.Path) && strings.HasPrefix(storedKey, req.Method) {
-			return response, nil
+		if !strings.HasPrefix(storedKey, req.Method) || !strings.Contains(storedKey, req.URL.Path) {
+			continue
 		}
+		// If request has a query, try to ensure storedKey contains it as well
+		if tq != "" {
+			if strings.Contains(storedKey, "?"+tq) || strings.Contains(storedKey, tq) {
+				return response, nil
+			}
+			continue
+		}
+		return response, nil
 	}
 
 	return &http.Response{
