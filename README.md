@@ -1,4 +1,5 @@
 # Conflux
+[![Build Status](https://gdesouza.semaphoreci.com/badges/conflux/branches/main.svg?style=shields&key=fc860726-2edb-49bb-b2b6-d7ed8466a9d8)](https://gdesouza.semaphoreci.com/projects/conflux)
 
 A command-line tool to synchronize local markdown files to Confluence spaces with Mermaid.js diagram support.
 
