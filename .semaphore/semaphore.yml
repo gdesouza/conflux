@@ -24,7 +24,13 @@ blocks:
       jobs:
         - name: Code coverage Report
           commands:
+            - sem-version go 1.25.1
+            - export GO111MODULE=on
+            - export GOPATH=~/go
+            - 'export PATH=/home/semaphore/go/bin:$PATH'
+            - checkout
             - 'curl -Os https://cli.codecov.io/latest/linux/codecov'
             - sudo chmod +x codecov
-            - go test -coverprofile=coverage.txt
+            - go test ./... -coverprofile=coverage.txt
             - ./codecov upload-process
+

@@ -27,7 +27,7 @@
 - `docs/sessions/2025-09-29-confluence-macro-conversion.md` - This session summary.
 
 ## Tests Added
-- Manual verification by running `conflux get-page` with `--format markdown` on various pages.
+- Manual verification by running `conflux pull` with `--format markdown` on various pages.
 
 ## Configuration Changes
 None.

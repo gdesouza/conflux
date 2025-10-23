@@ -715,13 +715,19 @@ func TestSyncer_DirectoryStatusDetection(t *testing.T) {
 
 	// Create test files
 	testDir := filepath.Join(tempDir, "test-dir")
-	os.MkdirAll(testDir, 0755)
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
 
 	testFile1 := filepath.Join(testDir, "file1.md")
 	testFile2 := filepath.Join(testDir, "file2.md")
 
-	os.WriteFile(testFile1, []byte("# File 1"), 0600)
-	os.WriteFile(testFile2, []byte("# File 2"), 0600)
+	if err := os.WriteFile(testFile1, []byte("# File 1"), 0600); err != nil {
+		t.Fatalf("Failed to create test file1: %v", err)
+	}
+	if err := os.WriteFile(testFile2, []byte("# File 2"), 0600); err != nil {
+		t.Fatalf("Failed to create test file2: %v", err)
+	}
 
 	files := []string{testFile1, testFile2}
 
@@ -740,7 +746,9 @@ func TestSyncer_DirectoryStatusDetection(t *testing.T) {
 
 	// Test: After adding a new file, should return StatusChanged
 	testFile3 := filepath.Join(testDir, "file3.md")
-	os.WriteFile(testFile3, []byte("# File 3"), 0600)
+	if err := os.WriteFile(testFile3, []byte("# File 3"), 0600); err != nil {
+		t.Fatalf("Failed to create test file3: %v", err)
+	}
 	filesWithNew := append(files, testFile3)
 
 	status = syncer.metadata.GetDirectoryStatus("test-dir", filesWithNew)
@@ -860,8 +868,7 @@ func TestSyncer_Integration_FullSync(t *testing.T) {
 	}
 
 	for filePath, content := range files {
-		err = os.WriteFile(filePath, []byte(content), 0600)
-		if err != nil {
+		if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
 			t.Fatalf("Failed to create file %s: %v", filePath, err)
 		}
 	}

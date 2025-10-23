@@ -62,15 +62,15 @@ func TestGetPage_ByID(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
 	verbose = false
-	getPageSpace = "DOCS"
-	getPageProject = ""     // ensure no leftover project selection
-	getPageIDOrTitle = "42" // numeric triggers ID path
-	getPageFormat = "storage"
+	pullSpace = "DOCS"
+	pullProject = ""     // ensure no leftover project selection
+	pullIDOrTitle = "42" // numeric triggers ID path
+	pullFormat = "storage"
 
 	out := captureStdoutGetPage(func() {
 		withMockClientGetPage(t, mc, func() {
-			if err := runGetPage(nil, nil); err != nil {
-				t.Fatalf("runGetPage: %v", err)
+			if err := runPull(nil, nil); err != nil {
+				t.Fatalf("runPull: %v", err)
 			}
 		})
 	})
@@ -91,15 +91,15 @@ func TestGetPage_FallbackToTitle(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
 	verbose = false
-	getPageSpace = "DOCS"
-	getPageProject = ""        // ensure no leftover project selection
-	getPageIDOrTitle = "Guide" // non-numeric triggers title search
-	getPageFormat = "html"
+	pullSpace = "DOCS"
+	pullProject = ""        // ensure no leftover project selection
+	pullIDOrTitle = "Guide" // non-numeric triggers title search
+	pullFormat = "html"
 
 	out := captureStdoutGetPage(func() {
 		withMockClientGetPage(t, mc, func() {
-			if err := runGetPage(nil, nil); err != nil {
-				t.Fatalf("runGetPage: %v", err)
+			if err := runPull(nil, nil); err != nil {
+				t.Fatalf("runPull: %v", err)
 			}
 		})
 	})
@@ -116,13 +116,13 @@ func TestGetPage_PageNotFound(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
 	verbose = false
-	getPageSpace = "DOCS"
-	getPageProject = "" // ensure no leftover project selection
-	getPageIDOrTitle = "Missing"
-	getPageFormat = "storage"
+	pullSpace = "DOCS"
+	pullProject = "" // ensure no leftover project selection
+	pullIDOrTitle = "Missing"
+	pullFormat = "storage"
 
 	withMockClientGetPage(t, mc, func() {
-		if err := runGetPage(nil, nil); err == nil {
+		if err := runPull(nil, nil); err == nil {
 			t.Fatalf("expected error for missing page")
 		}
 	})

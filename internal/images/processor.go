@@ -93,14 +93,14 @@ func (p *Processor) ValidateImageFile(ref *ImageReference) error {
 
 	// Check file size
 	if p.config.MaxFileSize > 0 && info.Size() > p.config.MaxFileSize {
-		return fmt.Errorf("image file %s exceeds maximum size limit (%d bytes): %d bytes", 
+		return fmt.Errorf("image file %s exceeds maximum size limit (%d bytes): %d bytes",
 			ref.AbsolutePath, p.config.MaxFileSize, info.Size())
 	}
 
 	// Check file extension
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(ref.AbsolutePath), "."))
 	if !p.isFormatSupported(ext) {
-		return fmt.Errorf("image format '%s' is not supported for file %s. Supported formats: %v", 
+		return fmt.Errorf("image format '%s' is not supported for file %s. Supported formats: %v",
 			ext, ref.AbsolutePath, p.config.SupportedFormats)
 	}
 

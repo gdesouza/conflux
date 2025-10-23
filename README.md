@@ -299,7 +299,7 @@ conflux sync --project platform
 conflux list-pages --project core
 
 # Fetch a page with project inference
-conflux get-page --project core --page "Getting Started"
+conflux pull --project core --page "Getting Started"
 ```
 
 #### Listing Projects
@@ -348,19 +348,19 @@ conflux list-pages --project core
 ### Get Page Command
 ```bash
 # Fetch a page by numeric ID (storage format by default)
-conflux get-page -space DOCS -page 123456789
+conflux pull -space DOCS -page 123456789
 
 # Fetch by title
-conflux get-page -space DOCS -page "Getting Started"
+conflux pull -space DOCS -page "Getting Started"
 
 # Use project inference
-conflux get-page --project core --page "Getting Started"
+conflux pull --project core --page "Getting Started"
 
 # Output rendered HTML view
-conflux get-page -space DOCS -page 123456789 -format html
+conflux pull -space DOCS -page 123456789 -format html
 
 # Convert to Markdown
-conflux get-page -space DOCS -page 123456789 -format markdown
+conflux pull -space DOCS -page 123456789 -format markdown
 ```
 Supported formats:
 - storage (default) – raw Confluence storage format XML/HTML
@@ -415,7 +415,7 @@ conflux inspect --project core -page "Architecture"
 
 - `sync` - Sync local markdown files to Confluence (default command)
 - `list-pages` - List page hierarchy from a Confluence space
-- `get-page` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
+- `pull` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
 - `inspect` - Inspect page hierarchy and relationships
 - `upload` - Create or update a single markdown file as a Confluence page
 - `projects` - List configured projects (multi-project mode)

@@ -4,7 +4,7 @@
 **Participants**: User, Gemini
 
 ## Objectives
-- Fix a bug in the `get-page` command where image attachment URLs were being incorrectly escaped.
+- Fix a bug in the `pull` command where image attachment URLs were being incorrectly escaped.
 
 ## Key Decisions
 - The root cause was identified as double escaping of backslashes. The `preprocessConfluenceImages` function was adding a backslash to escape underscores, and then the `html-to-markdown` library was escaping that backslash again.

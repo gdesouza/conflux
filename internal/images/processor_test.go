@@ -58,8 +58,8 @@ Some text here.
 			expectedPath: []string{"empty-alt.gif"},
 		},
 		{
-			name: "Absolute path image",
-			markdown: "![Absolute](/full/path/to/image.svg)",
+			name:         "Absolute path image",
+			markdown:     "![Absolute](/full/path/to/image.svg)",
 			markdownDir:  "/home/user/docs",
 			expectedRefs: 1,
 			expectedAlt:  []string{"Absolute"},
@@ -100,17 +100,17 @@ func TestValidateImageFile(t *testing.T) {
 
 	// Create test image files
 	validImagePath := filepath.Join(tempDir, "valid.png")
-	if err := os.WriteFile(validImagePath, []byte("fake png content"), 0644); err != nil {
+	if err := os.WriteFile(validImagePath, []byte("fake png content"), 0600); err != nil {
 		t.Fatalf("Failed to create test image: %v", err)
 	}
 
 	largeImagePath := filepath.Join(tempDir, "large.jpg")
-	if err := os.WriteFile(largeImagePath, make([]byte, 2*1024*1024), 0644); err != nil { // 2MB
+	if err := os.WriteFile(largeImagePath, make([]byte, 2*1024*1024), 0600); err != nil { // 2MB
 		t.Fatalf("Failed to create large test image: %v", err)
 	}
 
 	unsupportedImagePath := filepath.Join(tempDir, "test.bmp")
-	if err := os.WriteFile(unsupportedImagePath, []byte("fake bmp content"), 0644); err != nil {
+	if err := os.WriteFile(unsupportedImagePath, []byte("fake bmp content"), 0600); err != nil {
 		t.Fatalf("Failed to create unsupported test image: %v", err)
 	}
 
@@ -121,9 +121,9 @@ func TestValidateImageFile(t *testing.T) {
 	processor := NewProcessor(cfg, nil)
 
 	tests := []struct {
-		name        string
-		ref         *ImageReference
-		expectError bool
+		name          string
+		ref           *ImageReference
+		expectError   bool
 		errorContains string
 	}{
 		{
@@ -162,7 +162,7 @@ func TestValidateImageFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := processor.ValidateImageFile(tt.ref)
-			
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("ValidateImageFile() expected error but got none")

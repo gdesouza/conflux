@@ -5,7 +5,7 @@
 **AI Model**: OpenAI-based coding assistant (context-aware session continuation)
 
 ## Objectives
-- Add `get-page` CLI command to retrieve Confluence page content
+- Add `pull` CLI command to retrieve Confluence page content
 - Support multiple output formats: storage, html, markdown
 - Reuse existing client while minimally extending data model
 - Provide documentation and test coverage for new functionality
@@ -18,7 +18,7 @@
 - **ID or Title Resolution**: Attempt numeric ID lookup first (if input string is numeric), fallback to title search to avoid ambiguity.
 
 ## Implementation Summary
-Implemented a new Cobra command `get-page` that fetches a Confluence page either by ID or by title within a space, then outputs its content in one of three formats. Extended the Confluence client to expand `body.storage` and `body.view` for richer representation. Added focused tests around content selection and format handling.
+Implemented a new Cobra command `pull` that fetches a Confluence page either by ID or by title within a space, then outputs its content in one of three formats. Extended the Confluence client to expand `body.storage` and `body.view` for richer representation. Added focused tests around content selection and format handling.
 
 ## Technical Details
 
@@ -27,7 +27,7 @@ Implemented a new Cobra command `get-page` that fetches a Confluence page either
 
 ### Modified Components  
 - **`internal/confluence/client.go`**: Added `Body.View.Value` field and expanded `GetPage` request to include `body.storage,body.view`.
-- **`README.md`**: Added usage examples, command listing, flags, and dedicated section for `get-page`.
+- **`README.md`**: Added usage examples, command listing, flags, and dedicated section for `pull`.
 
 ## Files Modified/Created
 - `cmd/conflux/commands/get_page.go` - New command implementation with format handling & output helper.
@@ -35,7 +35,7 @@ Implemented a new Cobra command `get-page` that fetches a Confluence page either
 - `internal/confluence/client.go` - Added view expansion for richer HTML retrieval.
 - `README.md` - Documentation updates (command list, usage, flags, examples).
 - `go.mod` / `go.sum` - Added html-to-markdown dependency and transitive requirements.
-- `docs/sessions/2025-09-26-get-page-command.md` - This session summary.
+- `docs/sessions/2025-09-26-pull-command.md` - This session summary.
 
 ## Tests Added
 - **Storage Output Test**: Validates raw storage retrieval.
@@ -72,13 +72,13 @@ No configuration schema changes were required for this feature.
 - Refine `isNumeric` to reject negatives if Confluence IDs are always positive.
 - Add optional rate limiting or retry/backoff strategy for chained page fetches.
 - Provide JSON output format (`--format json`) containing title, id, and all bodies for scripting.
-- Evaluate caching layer for repeated `get-page` calls in batch scripts.
+- Evaluate caching layer for repeated `pull` calls in batch scripts.
 - Extend title-based lookup to also request `body.view`.
 - Add integration-style tests for end-to-end command execution with mock client interface.
 - Evaluate adding macro normalization for improved markdown export fidelity.
 
 ## Related Commits
-- (Pending) Commit adding `get-page` feature, tests, and docs.
+- (Pending) Commit adding `pull` feature, tests, and docs.
 
 ---
 

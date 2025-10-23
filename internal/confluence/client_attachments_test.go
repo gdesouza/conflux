@@ -18,8 +18,12 @@ func TestUploadAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(tmpfile.Name())
-	tmpfile.WriteString("test content")
-	tmpfile.Close()
+	if _, err := tmpfile.WriteString("test content"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Mock the upload response
 	attachmentResponse := struct {
@@ -53,8 +57,12 @@ func TestUploadAttachmentDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(tmpfile.Name())
-	tmpfile.WriteString("test content")
-	tmpfile.Close()
+	if _, err := tmpfile.WriteString("test content"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	filename := filepath.Base(tmpfile.Name())
 

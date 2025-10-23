@@ -5,17 +5,17 @@ import (
 	"testing"
 )
 
-// Error-path tests for get-page command argument / selection validation.
+// Error-path tests for pull command argument / selection validation.
 // These cover branches that return early before any Confluence client interaction.
 
 func TestGetPageError_MissingPageFlag(t *testing.T) {
 	// Reset globals
-	getPageIDOrTitle = "" // triggers first validation error
-	getPageFormat = "storage"
-	getPageSpace = "DOCS" // even if space present, page flag check runs first
-	getPageProject = ""
+	pullIDOrTitle = "" // triggers first validation error
+	pullFormat = "storage"
+	pullSpace = "DOCS" // even if space present, page flag check runs first
+	pullProject = ""
 
-	if err := runGetPage(nil, nil); err == nil || !strings.Contains(err.Error(), "page flag is required") {
+	if err := runPull(nil, nil); err == nil || !strings.Contains(err.Error(), "page flag is required") {
 		if err == nil {
 			t.Fatalf("expected error when page flag missing")
 		}
@@ -29,12 +29,12 @@ func TestGetPageError_MissingPageFlag(t *testing.T) {
 func TestGetPageError_UnsupportedFormat(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
-	getPageIDOrTitle = "SomePage"
-	getPageFormat = "weird" // invalid
-	getPageSpace = "DOCS"
-	getPageProject = ""
+	pullIDOrTitle = "SomePage"
+	pullFormat = "weird" // invalid
+	pullSpace = "DOCS"
+	pullProject = ""
 
-	if err := runGetPage(nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported format") {
+	if err := runPull(nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported format") {
 		if err == nil {
 			t.Fatalf("expected unsupported format error")
 		}
@@ -46,12 +46,12 @@ func TestGetPageError_UnsupportedFormat(t *testing.T) {
 func TestGetPageError_MissingSpaceAndProject(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
-	getPageIDOrTitle = "SomePage"
-	getPageFormat = "storage"
-	getPageSpace = ""   // not provided
-	getPageProject = "" // not provided
+	pullIDOrTitle = "SomePage"
+	pullFormat = "storage"
+	pullSpace = ""   // not provided
+	pullProject = "" // not provided
 
-	if err := runGetPage(nil, nil); err == nil || !strings.Contains(err.Error(), "space flag or --project required") {
+	if err := runPull(nil, nil); err == nil || !strings.Contains(err.Error(), "space flag or --project required") {
 		if err == nil {
 			t.Fatalf("expected missing space/project error")
 		}
@@ -62,12 +62,12 @@ func TestGetPageError_MissingSpaceAndProject(t *testing.T) {
 func TestGetPageError_BadProjectSelection(t *testing.T) {
 	cfgPath := writeTempConfigGetPage(t)
 	configFile = cfgPath
-	getPageIDOrTitle = "SomePage"
-	getPageFormat = "storage"
-	getPageSpace = ""          // rely on project (which fails)
-	getPageProject = "unknown" // project does not exist in config
+	pullIDOrTitle = "SomePage"
+	pullFormat = "storage"
+	pullSpace = ""          // rely on project (which fails)
+	pullProject = "unknown" // project does not exist in config
 
-	if err := runGetPage(nil, nil); err == nil || !strings.Contains(err.Error(), "failed to select project") {
+	if err := runPull(nil, nil); err == nil || !strings.Contains(err.Error(), "failed to select project") {
 		if err == nil {
 			t.Fatalf("expected project selection failure")
 		}

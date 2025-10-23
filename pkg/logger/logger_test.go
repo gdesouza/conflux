@@ -175,7 +175,7 @@ func TestPrint(t *testing.T) {
 	os.Stdout = originalStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	if output != "test print" {
@@ -197,7 +197,7 @@ func TestPrintf(t *testing.T) {
 	os.Stdout = originalStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	if output != "test printf with 1" {
@@ -219,7 +219,7 @@ func TestPrintln(t *testing.T) {
 	os.Stdout = originalStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	if output != "test println\n" {
@@ -241,7 +241,7 @@ func TestPrintlnMultipleArgs(t *testing.T) {
 	os.Stdout = originalStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	if output != "test multiple args\n" {

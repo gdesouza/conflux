@@ -44,7 +44,7 @@ func TestGetPageProjectInferenceMissingSpace(t *testing.T) {
 	_ = writeConfig(t, tmp, cfgData)
 
 	// We cannot actually hit Confluence; we just assert early validation error about page requirement shows project inference happened for space (space error should not occur). We request format=storage with page missing.
-	args := []string{"get-page", "--config", filepath.Join(tmp, "config.yaml"), "--project", "site", "--page", "123"}
+	args := []string{"pull", "--config", filepath.Join(tmp, "config.yaml"), "--project", "site", "--page", "123"}
 
 	// Command will attempt network access after resolving config and before failing if page not found. We expect an error referencing fetch failure (since client will attempt). To avoid real network, base_url is https://example (won't resolve). We only assert it tried to use space SITE (no explicit output includes space before fetch). To ensure deterministic behavior, we accept any error but not the error complaining about missing space flag.
 	_, _, err := runCmdForTest(t, args)

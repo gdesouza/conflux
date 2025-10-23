@@ -39,7 +39,7 @@ func TestUploadCreatesNewPage(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "test.md")
 	content := "# Test Title\n\nSome body text." // Title should be "Test Title"
-	if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(file, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestUploadUpdatesExistingPage(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "page.md")
 	content := "# Existing Page\n\nNew body." // Title matches existing
-	if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(file, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestUploadParentResolutionNumeric(t *testing.T) {
 	// temp file
 	dir := t.TempDir()
 	file := filepath.Join(dir, "child.md")
-	if err := os.WriteFile(file, []byte("# Child\nBody"), 0644); err != nil {
+	if err := os.WriteFile(file, []byte("# Child\nBody"), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestUploadParentResolutionByTitle(t *testing.T) {
 	// temp file
 	dir := t.TempDir()
 	file := filepath.Join(dir, "child2.md")
-	if err := os.WriteFile(file, []byte("# Child2\nBody"), 0644); err != nil {
+	if err := os.WriteFile(file, []byte("# Child2\nBody"), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
