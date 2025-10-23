@@ -1,4 +1,6 @@
 # Conflux
+
+[![GitHub Actions](https://github.com/gdesouza/conflux/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gdesouza/conflux/actions/workflows/ci.yml)
 [![Build Status](https://gdesouza.semaphoreci.com/badges/conflux/branches/main.svg?style=shields&key=fc860726-2edb-49bb-b2b6-d7ed8466a9d8)](https://gdesouza.semaphoreci.com/projects/conflux)
 [![codecov](https://codecov.io/github/gdesouza/conflux/graph/badge.svg?token=T0UIB07O7R)](https://codecov.io/github/gdesouza/conflux)
 
