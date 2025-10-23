@@ -20,11 +20,11 @@ blocks:
             - pip install codecov-cli
             - /home/semaphore/.local/bin/codecov-cli upload-process
       secrets:
-        - name: Codecov token
+        - name: codecov-conflux
   - name: Coverage
     task:
       secrets:
-        - name: Codecov token
+        - name: codecov-conflux
       jobs:
         - name: Code coverage Report
           commands:
