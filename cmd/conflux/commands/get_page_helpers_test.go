@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"conflux/internal/confluence"
+	"conflux/pkg/logger"
 )
 
 // TestRunGetPage_Attachments ensures attachments are downloaded and links rewritten
@@ -20,16 +21,20 @@ func TestRunGetPage_Attachments(t *testing.T) {
 	mc := confluence.NewMockClient()
 	mc.Pages[page.ID] = page
 	mc.PagesByTitle["DOCS:Test Page"] = page
-	// Provide attachments: one PDF and one image
+	// Provide attachments: one PDF and one image. Use the anonymous Links struct type.
 	mc.Attachments[page.ID] = []confluence.Attachment{
-		{ID: "att-pdf", Title: "attachment.pdf", MediaType: "application/pdf", Links: confluence.AttachmentLinks{Download: "http://example.local/attachment.pdf"}},
-		{ID: "att-img", Title: "image file.png", MediaType: "image/png", Links: confluence.AttachmentLinks{Download: "http://example.local/image%20file.png"}},
+		{ID: "att-pdf", Title: "attachment.pdf", MediaType: "application/pdf", Links: struct {
+			Download string `json:"download"`
+		}{Download: "http://example.local/attachment.pdf"}},
+		{ID: "att-img", Title: "image file.png", MediaType: "image/png", Links: struct {
+			Download string `json:"download"`
+		}{Download: "http://example.local/image%20file.png"}},
 	}
 
-	// Replace the package-level newConfluenceClient to return our mock
+	// Replace the package-level newConfluenceClient to return our mock (match the real signature)
 	origNew := newConfluenceClient
 	defer func() { newConfluenceClient = origNew }()
-	newConfluenceClient = func(baseURL, username, token string, log interface{}) confluence.ConfluenceClient {
+	newConfluenceClient = func(baseURL, username, token string, log *logger.Logger) confluence.ConfluenceClient {
 		return mc
 	}
 
@@ -68,7 +73,7 @@ func TestRunGetPage_Attachments(t *testing.T) {
 		t.Fatalf("expected image file.png to be saved in %s", attDir)
 	}
 
-	// Optionally read stdout content from runGetPage by capturing os.Stdout in a real test; for simplicity ensure mock client was used
+	// Ensure mock client attachments remain unchanged
 	if len(mc.Attachments[page.ID]) != 2 {
 		t.Fatalf("mock attachments mutated unexpectedly: %v", mc.Attachments[page.ID])
 	}
