@@ -17,8 +17,8 @@ blocks:
             - checkout
             - go get ./...
             - make test
-            - pipx install codecov-cli
-            - codecov-cli upload-process
+            - pip install codecov-cli
+            - /home/semaphore/.local/bin/codecov-cli upload-process
       secrets:
         - name: Codecov token
   - name: Coverage
