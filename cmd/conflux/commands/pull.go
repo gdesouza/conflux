@@ -2,15 +2,11 @@ package commands
 
 import (
 	"fmt"
-	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
 	"strings"
 
-	htmldoc "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/spf13/cobra"
 
 	"conflux/internal/config"
@@ -18,34 +14,8 @@ import (
 	"conflux/pkg/logger"
 )
 
-// preprocessConfluenceImages replaces <ac:image><ri:attachment ... /></ac:image> with markdown image syntax
-func preprocessConfluenceImages(html string) string {
-	// Improved regex to match <ac:image ...><ri:attachment ri:filename="..." ... /></ac:image>
-	imgRe := regexp.MustCompile(`(?s)<ac:image[^>]*>\s*<ri:attachment[^>]*ri:filename=["']([^"']+)["'][^>]*/?>\s*</ac:image>`) // strict for single attachment
-	return imgRe.ReplaceAllStringFunc(html, func(match string) string {
-		filenameMatch := imgRe.FindStringSubmatch(match)
-		var filename string
-		if len(filenameMatch) > 1 {
-			filename = filenameMatch[1]
-		} else {
-			// Fallback: manual search for ri:filename="..."
-			idx := strings.Index(match, `ri:filename="`)
-			if idx != -1 {
-				start := idx + len(`ri:filename="`)
-				end := strings.Index(match[start:], `"`)
-				if end != -1 {
-					filename = match[start : start+end]
-				}
-			}
-		}
-		if filename != "" {
-			// URL-encode spaces
-			link := url.PathEscape(filename)
-			return fmt.Sprintf("![%s](attachments/%s)", filename, link)
-		}
-		return ""
-	})
-}
+// helper functions for processing Confluence HTML are provided by get_page.go
+// to avoid duplication they were removed from pull.go and reused from get_page.go
 
 var (
 	pullSpace     string
@@ -214,117 +184,11 @@ func runPull(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func preprocessConfluenceMacros(htmlContent string) string {
-	// Handle TOC macro
-	tocRe := regexp.MustCompile(`(?s)<ac:structured-macro ac:name="toc".*?/>`)
-	htmlContent = tocRe.ReplaceAllString(htmlContent, "") // Remove TOC macro
+// helper functions for processing Confluence HTML are provided by get_page.go
+// to avoid duplication they were removed from pull.go and reused from get_page.go
 
-	// Handle Info and Note macros
-	infoNoteRe := regexp.MustCompile(`(?s)<ac:structured-macro ac:name="(info|note)".*?><ac:rich-text-body>(.*?)</ac:rich-text-body></ac:structured-macro>`)
-	htmlContent = infoNoteRe.ReplaceAllStringFunc(htmlContent, func(match string) string {
-		// Extract content from ac:rich-text-body
-		contentRe := regexp.MustCompile(`(?s)<ac:rich-text-body>(.*?)</ac:rich-text-body>`)
-		contentMatch := contentRe.FindStringSubmatch(match)
-		content := ""
-		if len(contentMatch) > 1 {
-			content = contentMatch[1]
-		}
-		// Un-escape &gt;
-		content = strings.ReplaceAll(content, "&gt;", ">")
-		// Convert to blockquote
-		return "\n> " + strings.ReplaceAll(content, "\n", "\n> ") + "\n"
-	})
-
-	// Handle Inline Comment Marker macro (remove it)
-	inlineCommentRe := regexp.MustCompile(`(?s)<ac:inline-comment-marker.*?>.*?</ac:inline-comment-marker>`)
-	htmlContent = inlineCommentRe.ReplaceAllString(htmlContent, "")
-
-	// Handle View File macro
-	viewFileRe := regexp.MustCompile(`(?s)<ac:structured-macro ac:name="view-file".*?><ac:parameter ac:name="name"><ri:attachment ri:filename="(.*?)".*? /></ac:parameter></ac:structured-macro>`)
-	htmlContent = viewFileRe.ReplaceAllStringFunc(htmlContent, func(match string) string {
-		filenameRe := regexp.MustCompile(`ri:filename="(.*?)"`)
-		filenameMatch := filenameRe.FindStringSubmatch(match)
-		filename := ""
-		if len(filenameMatch) > 1 {
-			filename = filenameMatch[1]
-		}
-		// Create a markdown link to the attachment
-		return fmt.Sprintf("[%s](attachments/%s)", filename, url.PathEscape(filename))
-	})
-
-	// Handle Code macro
-	codeRe := regexp.MustCompile(`(?s)<ac:structured-macro ac:name="code".*?>(.*?)</ac:structured-macro>`)
-	htmlContent = codeRe.ReplaceAllStringFunc(htmlContent, func(match string) string {
-		// Extract language
-		langRe := regexp.MustCompile(`<ac:parameter ac:name="language">(.*?)</ac:parameter>`)
-		langMatch := langRe.FindStringSubmatch(match)
-		language := ""
-		if len(langMatch) > 1 {
-			language = ` class="language-` + langMatch[1] + `"`
-		}
-
-		// Extract code
-		cdataRe := regexp.MustCompile(`(?s)<!\[CDATA\[(.*?)]]>`)
-		cdataMatch := cdataRe.FindStringSubmatch(match)
-		code := ""
-		if len(cdataMatch) > 1 {
-			code = html.EscapeString(cdataMatch[1])
-		}
-
-		return "<pre><code" + language + ">" + code + "</code></pre>"
-	})
-
-	return htmlContent
-}
-
-// generatePageOutput returns the page content in the requested format.
-// It does not include the header line with title/ID.
-func generatePageOutput(page *confluence.Page, format string) (string, error) {
-	switch format {
-	case "storage":
-		return page.Body.Storage.Value, nil
-	case "html":
-		if page.Body.View.Value != "" {
-			return page.Body.View.Value, nil
-		}
-		return page.Body.Storage.Value, nil
-	case "markdown":
-		var htmlContent string
-		if page.Body.View.Value != "" {
-			htmlContent = page.Body.View.Value
-		} else {
-			htmlContent = page.Body.Storage.Value
-		}
-		// Preprocess Confluence image macros to markdown image syntax
-		htmlContent = preprocessConfluenceImages(htmlContent)
-		// Preprocess other Confluence macros
-		htmlContent = preprocessConfluenceMacros(htmlContent)
-
-		markdown, err := htmldoc.ConvertString(htmlContent)
-		if err != nil {
-			return htmlContent, nil // fallback to raw HTML on conversion errors
-		}
-		// Patch: unescape image syntax if needed
-		patched := strings.ReplaceAll(string(markdown), "!\\\"[", "![")
-
-		// New patch: unescape underscores in image URLs
-		imgUrlRe := regexp.MustCompile(`!\[(.*?)\]\((.*?)\)`)
-		patched = imgUrlRe.ReplaceAllStringFunc(patched, func(match string) string {
-			parts := imgUrlRe.FindStringSubmatch(match)
-			altText := parts[1]
-			url := parts[2]
-			unescapedUrl := strings.ReplaceAll(url, "\\_", "_")
-			return fmt.Sprintf("![%s](%s)", altText, unescapedUrl)
-		})
-
-		// New patch: unescape &gt; in blockquotes
-		patched = strings.ReplaceAll(patched, "&gt;", ">")
-
-		return patched, nil
-	default:
-		return "", fmt.Errorf("unsupported format: %s", format)
-	}
-}
+// helper functions for processing Confluence HTML are provided by get_page.go
+// to avoid duplication they were removed from pull.go and reused from get_page.go
 
 func init() {
 	rootCmd.AddCommand(pullCmd)
