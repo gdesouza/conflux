@@ -17,6 +17,9 @@ blocks:
             - checkout
             - go get ./...
             - make test
+            - codecovcli upload-process
+      secrets:
+        - name: Codecov token
   - name: Coverage
     task:
       secrets:
@@ -33,4 +36,3 @@ blocks:
             - sudo chmod +x codecov
             - go test ./... -coverprofile=coverage.txt
             - ./codecov upload-process
-
