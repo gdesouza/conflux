@@ -17,8 +17,8 @@ blocks:
             - checkout
             - go get ./...
             - make test
-            - pip install codecov-cli
-            - codecov upload-process
+            - pipx install codecov-cli
+            - codecov-cli upload-process
       secrets:
         - name: Codecov token
   - name: Coverage
