@@ -17,6 +17,7 @@ blocks:
             - checkout
             - go get ./...
             - make test
+            - pip install codecov-cli
             - codecovcli upload-process
       secrets:
         - name: Codecov token
