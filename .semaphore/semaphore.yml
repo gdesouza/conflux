@@ -19,7 +19,7 @@ blocks:
             - make test
             - 'curl -Os https://cli.codecov.io/latest/linux/codecov'
             - chmod +x codecov
-            - './codecov --verbose upload-process --fail-on-error -t ${{ secrets.CODECOV_TOKEN }} -n ''service''-${{ github.run_id }} -F service -f coverage-service.xml'
+            - './codecov --verbose upload-process --fail-on-error '
       secrets:
         - name: codecov-conflux
   - name: Coverage
@@ -37,4 +37,4 @@ blocks:
             - 'curl -Os https://cli.codecov.io/latest/linux/codecov'
             - sudo chmod +x codecov
             - go test ./... -coverprofile=coverage.txt
-            - ./codecov upload-process
+            - './codecov --verbose upload-process --fail-on-error '
