@@ -21,8 +21,10 @@ It provides commands to sync documentation and list page hierarchies with visual
 formatting including icons and tree structures for easy navigation.`,
 	Example: `  conflux sync                                    # Sync current directory
   conflux sync -docs ./docs -space DOCS -dry-run # Sync with options
-  conflux list-pages -space DOCS                 # List all pages with icons
-  conflux list-pages -space DOCS -parent "API"   # List under parent with tree view`,
+  conflux push -f ./doc.md -s DOCS               # Push single file
+  conflux pull -s DOCS -p "My Page" -f markdown  # Download page as markdown
+  conflux pages -s DOCS                          # List all pages
+  conflux pages show -s DOCS -p "API"            # Show page details`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

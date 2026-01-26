@@ -11,13 +11,13 @@ import (
 // helper run command with args capturing output/error
 func runCmdForTest(t *testing.T, args []string) (stdout string, stderr string, err error) {
 	t.Helper()
-	// Reset configure command state between invocations
-	configureSets = nil
-	configureAddProjects = nil
-	configureRemoveProjects = nil
-	configureYes = false
-	configurePrint = false
-	configureNonInteractive = false
+	// Reset config command state between invocations
+	cfgSets = nil
+	cfgAddProjects = nil
+	cfgRemoveProjects = nil
+	cfgYes = false
+	cfgPrint = false
+	cfgNonInteractive = false
 
 	// Cobra uses the same rootCmd singleton; replace its output writers
 	outBuf := &bytes.Buffer{}

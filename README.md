@@ -336,56 +336,56 @@ conflux sync -dry-run -verbose
 conflux sync --project platform -docs ./overrides/platform -dry-run -verbose
 ```
 
-### List Pages Command
+### Pages Command
 ```bash
 # List all pages in a space
-conflux list-pages -space DOCS
+conflux pages -s DOCS
 
 # List pages under a specific parent page
-conflux list-pages -space DOCS -parent "API Documentation"
+conflux pages -s DOCS -p "API Documentation"
 
 # Use project inference (no --space required)
-conflux list-pages --project core
+conflux pages -P core
 ```
 
-### Get Page Command
+### Pull Command
 ```bash
 # Fetch a page by numeric ID (storage format by default)
-conflux pull -space DOCS -page 123456789
+conflux pull -s DOCS -p 123456789
 
 # Fetch by title
-conflux pull -space DOCS -page "Getting Started"
+conflux pull -s DOCS -p "Getting Started"
 
 # Use project inference
-conflux pull --project core --page "Getting Started"
+conflux pull -P core -p "Getting Started"
 
 # Output rendered HTML view
-conflux pull -space DOCS -page 123456789 -format html
+conflux pull -s DOCS -p 123456789 -f html
 
 # Convert to Markdown
-conflux pull -space DOCS -page 123456789 -format markdown
+conflux pull -s DOCS -p 123456789 -f markdown
 ```
 Supported formats:
 - storage (default) – raw Confluence storage format XML/HTML
 - html – rendered page HTML (falls back to storage if view not available)
 - markdown – converts rendered HTML (or storage) to Markdown
 
-### Upload Command
+### Push Command
 ```bash
 # Create a new page from a single markdown file
-conflux upload -file ./docs/intro.md -space DOCS
+conflux push -f ./docs/intro.md -s DOCS
 
 # Update an existing page (matched by top-level markdown heading)
-conflux upload -f ./docs/intro.md -space DOCS
+conflux push -f ./docs/intro.md -s DOCS
 
 # Specify a parent page by numeric ID
-conflux upload -f ./docs/feature.md -space DOCS -parent 123456789
+conflux push -f ./docs/feature.md -s DOCS -p 123456789
 
 # Or specify parent by title (resolved in the target space)
-conflux upload -f ./docs/advanced/optimizer.md -space DOCS -parent "Architecture"
+conflux push -f ./docs/advanced/optimizer.md -s DOCS -p "Architecture"
 
 # Use project inference (space comes from project config)
-conflux upload -f ./docs/core/overview.md --project core
+conflux push -f ./docs/core/overview.md -P core
 ```
 Behavior:
 - Determines the Confluence page title from the first level-1 markdown heading (`# Title`).
@@ -394,50 +394,60 @@ Behavior:
 - Space resolution precedence matches other commands: `--space` > `--project` > default project > legacy top-level `space_key`.
 
 Current limitations:
-- The `upload` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
+- The `push` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
 
 Flags:
-- `--file` / `-f` (required) – Path to a single markdown file.
-- `--space` / `-s` – Confluence space key (optional if `--project` supplied or default project provides one).
-- `--project` / `-P` – Project name defined in config to infer space.
-- `--parent` / `-p` – Optional parent page title or numeric ID.
+- `-f, --file` (required) – Path to a single markdown file.
+- `-s, --space` – Confluence space key (optional if `--project` supplied or default project provides one).
+- `-P, --project` – Project name defined in config to infer space.
+- `-p, --parent` – Optional parent page title or numeric ID.
 
-### Inspect Command
+### Pages Command
+
+List and inspect Confluence pages:
+
 ```bash
-# Space overview
-conflux inspect -space DOCS
+# List all pages in a space
+conflux pages -s DOCS
 
-# Inspect a page by title
-conflux inspect -space DOCS -page "Architecture"
+# List pages under a parent
+conflux pages -s DOCS -p "API"
+
+# Show detailed page information
+conflux pages show -s DOCS -p "Architecture"
+
+# Show space overview
+conflux pages show -s DOCS
 
 # With project inference
-conflux inspect --project core -page "Architecture"
+conflux pages show -P core -p "Architecture" -d
 ```
 
 ### CLI Commands
 
-- `sync` - Sync local markdown files to Confluence (default command)
-- `list-pages` - List page hierarchy from a Confluence space
-- `pull` - Fetch and display a page's content by ID or title (storage, html, or markdown formats)
-- `inspect` - Inspect page hierarchy and relationships
-- `upload` - Create or update a single markdown file as a Confluence page
+- `sync` - Sync local markdown files to Confluence with change detection
+- `push` - Push a single markdown file to Confluence
+- `pull` - Download a Confluence page as markdown (storage, html, or markdown formats)
+- `pages` - List page hierarchy from a Confluence space
+- `pages show` - Show detailed page information and relationships
 - `projects` - List configured projects (multi-project mode)
-- `configure` - Create or edit the configuration file (interactive or scripted)
+- `config` - Create or edit the configuration file (interactive or scripted)
+- `version` - Show version information
 
-### Configure Command
+### Config Command
 
-The `configure` command helps you create or update a `config.yaml` either interactively (guided prompts) or non-interactively for automation (CI/CD, scripting).
+The `config` command helps you create or update a `config.yaml` either interactively (guided prompts) or non-interactively for automation (CI/CD, scripting).
 
 Interactive mode (default when no non-interactive flags provided):
 ```bash
-conflux configure
+conflux config
 ```
 Provides prompts for Confluence credentials, optional multi-project setup, Mermaid, and Images settings. Existing values are shown as defaults if a config already exists.
 
 Non-interactive scripted usage:
 ```bash
 # Create or update config without prompts
-conflux configure \
+conflux config \
   --non-interactive --yes \
   --set confluence.base_url=https://your.atlassian.net/wiki \
   --set confluence.username=you@company.com \
@@ -450,7 +460,7 @@ conflux configure \
 
 Print resulting YAML instead of writing (preview / generate for pipelines):
 ```bash
-conflux configure --non-interactive --yes \
+conflux config --non-interactive --yes \
   --set confluence.base_url=https://your.atlassian.net/wiki \
   --set confluence.username=ci-bot \
   --set confluence.api_token=$ATLASSIAN_TOKEN \
@@ -461,12 +471,12 @@ conflux configure --non-interactive --yes \
 Remove or replace projects:
 ```bash
 # Replace existing project definition (same name overwrites)
-conflux configure --non-interactive --yes \
+conflux config --non-interactive --yes \
   --add-project "name=docs,space_key=DOCS,markdown_dir=./documentation" \
   --config config.yaml
 
 # Remove a project
-conflux configure --non-interactive --yes \
+conflux config --non-interactive --yes \
   --remove-project docs \
   --config config.yaml
 ```
@@ -485,43 +495,43 @@ Notes:
 ### CLI Flags
 
 **Global Flags:**
-- `-config` / `--config` - Path to configuration file (default: `config.yaml` or fallback to `~/.config/conflux/config.yaml`)
-- `-verbose` / `-v` - Enable detailed logging output
-- `-help` - Show usage information
+- `-c, --config` - Path to configuration file (default: `config.yaml` or fallback to `~/.config/conflux/config.yaml`)
+- `-v, --verbose` - Enable detailed logging output
+- `-h, --help` - Show usage information
 
 **Sync Command Flags:**
-- `-docs` - Path to markdown documents directory (overrides config/project)
-- `-space` - Confluence space key (overrides project selection)
-- `-project` / `-P` - Project name to select (infers space & docs)
-- `-dry-run` - Preview changes without syncing to Confluence
+- `-d, --docs` - Path to markdown documents directory (overrides config/project)
+- `-s, --space` - Confluence space key (overrides project selection)
+- `-P, --project` - Project name to select (infers space & docs)
+- `--dry-run` - Preview changes without syncing to Confluence
 
-**List-Pages Command Flags:**
-- `-space` - Confluence space key (optional if `--project` supplied)
-- `-parent` - Parent page title to start hierarchy from (optional)
-- `-project` / `-P` - Project name to infer space
+**Push Command Flags:**
+- `-f, --file` - Path to markdown file (required)
+- `-s, --space` - Confluence space key (optional if `--project` supplied)
+- `-P, --project` - Project name to infer space
+- `-p, --parent` - Parent page title or numeric ID (optional)
 
-**Get-Page Command Flags:**
-- `-space` - Confluence space key (optional if `--project` supplied)
-- `-project` / `-P` - Project name to infer space
-- `-page` - Page ID or title (required)
-- `-format` - Output format: `storage` (default), `html`, or `markdown`
+**Pull Command Flags:**
+- `-s, --space` - Confluence space key (optional if `--project` supplied)
+- `-P, --project` - Project name to infer space
+- `-p, --page` - Page ID or title (required)
+- `-f, --format` - Output format: `storage` (default), `html`, or `markdown`
 
-**Upload Command Flags:**
-- `-file` / `-f` - Path to markdown file (required)
-- `-space` / `-s` - Confluence space key (optional if `--project` supplied)
-- `-project` / `-P` - Project name to infer space
-- `-parent` / `-p` - Parent page title or numeric ID (optional)
+**Pages Command Flags:**
+- `-s, --space` - Confluence space key (optional if `--project` supplied)
+- `-p, --parent` - Parent page title to start hierarchy from (optional)
+- `-P, --project` - Project name to infer space
 
-**Inspect Command Flags:**
-- `-space` - Confluence space key (optional if `--project` supplied)
-- `-project` / `-P` - Project name to infer space
-- `-page` - Page ID or title to start inspection (optional)
-- `-details` - Show detailed page info
+**Pages Show Command Flags:**
+- `-s, --space` - Confluence space key (optional if `--project` supplied)
+- `-P, --project` - Project name to infer space
+- `-p, --page` - Page ID or title to inspect (optional)
+- `-d, --details` - Show detailed page info
 
 **Projects Command Flags:**
 - `--show-exclude` - Include exclude patterns for each project
 
-**Note**: The `-docs` flag overrides any `local.markdown_dir` from a project or top-level config.
+**Note**: The `-d, --docs` flag overrides any `local.markdown_dir` from a project or top-level config.
 
 ## Troubleshooting
 
