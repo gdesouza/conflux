@@ -619,42 +619,41 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 ## Recent Improvements
 
 ### v1.4.0 (Latest)
-- **✅ Harmonized page commands** - Replaced `get-page` with `pull` and introduced `pages list` and `pages get` subcommands for a more consistent CLI experience.
-- **✅ Improved test coverage** - Added more tests for the new commands.
+- **Harmonized page commands** - Replaced `get-page` with `pull` and introduced `pages list` and `pages get` subcommands for a more consistent CLI experience.
+- **Improved test coverage** - Added more tests for the new commands.
 
 ### v1.3.0
-- **✅ Upload command** - Added `upload` for quickly creating/updating a single markdown file as a Confluence page
-- **✅ Image attachment support** - Automatically detect and upload images referenced in markdown files
+- **Upload command** - Added `upload` for quickly creating/updating a single markdown file as a Confluence page
+- **Image attachment support** - Automatically detect and upload images referenced in markdown files
   - **Automatic detection**: Finds `![alt](image.png)` syntax in markdown content
   - **Multiple formats**: Support for PNG, JPG, JPEG, GIF, SVG, and WEBP images
   - **Path resolution**: Handles both relative and absolute image paths
   - **File validation**: Checks for file existence, size limits, and supported formats
   - **Graceful error handling**: Continues sync operation even when some images fail
-- **✅ Enhanced markdown processing** - Extended parser to handle image references alongside mermaid diagrams
-- **✅ Configurable image processing** - File size limits, supported formats, and future resizing options
-- **✅ Improved sync logic** - Post-processing now handles both images and mermaid diagrams efficiently
-- **✅ Comprehensive image validation** - Built-in checks for file existence, formats, and size limits
-- **✅ Multi-project configuration** - Added `projects` section + `--project` flag, project listing command, and space inference precedence
-
+- **Enhanced markdown processing** - Extended parser to handle image references alongside mermaid diagrams
+- **Configurable image processing** - File size limits, supported formats, and future resizing options
+- **Improved sync logic** - Post-processing now handles both images and mermaid diagrams efficiently
+- **Comprehensive image validation** - Built-in checks for file existence, formats, and size limits
+- **Multi-project configuration** - Added `projects` section + `--project` flag, project listing command, and space inference precedence
+ 
 ### v1.2.0
-- **✅ Mermaid.js diagram support** - Automatically process mermaid diagrams with two modes:
+- **Mermaid.js diagram support** - Automatically process mermaid diagrams with two modes:
   - **Preserve mode**: Keep diagrams as syntax-highlighted code blocks
   - **Convert-to-image mode**: Convert to PNG/SVG/PDF and upload as attachments
-- **✅ Enhanced markdown processing** - Extended parser to detect and handle mermaid code blocks
-- **✅ Confluence attachment support** - Added API methods for uploading and managing attachments
-- **✅ Dependency checking** - Automatic detection of mermaid CLI availability with graceful fallbacks
-- **✅ Configurable mermaid themes** - Support for default, dark, forest, and neutral themes
-- **✅ Multiple output formats** - PNG, SVG, and PDF support for converted diagrams
-- **✅ Security improvements** - Upgraded from MD5 to SHA256 for file hashing
-
+- **Enhanced markdown processing** - Extended parser to detect and handle mermaid code blocks
+- **Confluence attachment support** - Added API methods for uploading and managing attachments
+- **Dependency checking** - Automatic detection of mermaid CLI availability with graceful fallbacks
+- **Configurable mermaid themes** - Support for default, dark, forest, and neutral themes
+- **Multiple output formats** - PNG, SVG, and PDF support for converted diagrams
+- **Security improvements** - Upgraded from MD5 to SHA256 for file hashing
+ 
 ### v1.1.0
-- **✅ Fixed children macro rendering** - Directory pages now properly display child page lists
-- **✅ Enhanced directory page updates** - Existing directory pages are now updated with new content
-- **✅ Simplified children macro** - Improved compatibility with Confluence Cloud
-- **✅ Better error handling** - More robust page version management and API error handling
-- **✅ Enhanced debug logging** - Comprehensive debugging output for troubleshooting
-- **✅ Project attribution** - Directory pages now include a link back to this GitHub repository
-
+- **Fixed children macro rendering** - Directory pages now properly display child page lists
+- **Enhanced directory page updates** - Existing directory pages are now updated with new content
+- **Simplified children macro** - Improved compatibility with Confluence Cloud
+- **Better error handling** - More robust page version management and API error handling
+- **Enhanced debug logging** - Comprehensive debugging output for troubleshooting
+- **Project attribution** - Directory pages now include a link back to this GitHub repository
 ### Key Bug Fixes
 - Directory pages are now properly updated when they already exist (previously they were skipped)
 - Children macro uses optimized parameters for better Confluence Cloud compatibility
