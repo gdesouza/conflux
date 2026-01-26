@@ -1,7 +1,7 @@
 # Conflux
 
 [![GitHub Actions](https://github.com/gdesouza/conflux/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gdesouza/conflux/actions/workflows/ci.yml)
-[![Build Status](https://gdesouza.semaphoreci.com/badges/conflux/branches/main.svg?style=shields&key=fc860726-2edb-49bb-b2b6-d7ed8466a9d8)](https://gdesouza.semaphoreci.com/projects/conflux)
+[![Build Status](https://gdesouza.semaphoreci.com/badges/conflux/branches/main.svg?style=shields&key=fc860726-2edb-49bb-b2b6-d7ed8466a9d8)](https://gdesouza/semaphoreci.com/projects/conflux)
 [![codecov](https://codecov.io/github/gdesouza/conflux/graph/badge.svg?token=T0UIB07O7R)](https://codecov.io/github/gdesouza/conflux)
 
 A command-line tool to synchronize local markdown files to Confluence spaces with Mermaid.js diagram support.
@@ -339,13 +339,13 @@ conflux sync --project platform -docs ./overrides/platform -dry-run -verbose
 ### Pages Command
 ```bash
 # List all pages in a space
-conflux pages -s DOCS
+conflux pages list -s DOCS
 
 # List pages under a specific parent page
-conflux pages -s DOCS -p "API Documentation"
+conflux pages list -s DOCS -p "API Documentation"
 
 # Use project inference (no --space required)
-conflux pages -P core
+conflux pages list -P core
 ```
 
 ### Pull Command
@@ -408,19 +408,19 @@ List and inspect Confluence pages:
 
 ```bash
 # List all pages in a space
-conflux pages -s DOCS
+conflux pages list -s DOCS
 
 # List pages under a parent
-conflux pages -s DOCS -p "API"
+conflux pages list -s DOCS -p "API"
 
 # Show detailed page information
-conflux pages show -s DOCS -p "Architecture"
+conflux pages get -s DOCS -p "Architecture"
 
 # Show space overview
-conflux pages show -s DOCS
+conflux pages get -s DOCS
 
 # With project inference
-conflux pages show -P core -p "Architecture" -d
+conflux pages get -P core -p "Architecture" -d
 ```
 
 ### CLI Commands
@@ -428,8 +428,9 @@ conflux pages show -P core -p "Architecture" -d
 - `sync` - Sync local markdown files to Confluence with change detection
 - `push` - Push a single markdown file to Confluence
 - `pull` - Download a Confluence page as markdown (storage, html, or markdown formats)
-- `pages` - List page hierarchy from a Confluence space
-- `pages show` - Show detailed page information and relationships
+- `pages` - List and inspect Confluence pages
+- `pages list` - List page hierarchy from a Confluence space
+- `pages get` - Show detailed page information and relationships
 - `projects` - List configured projects (multi-project mode)
 - `config` - Create or edit the configuration file (interactive or scripted)
 - `version` - Show version information
@@ -517,12 +518,12 @@ Notes:
 - `-p, --page` - Page ID or title (required)
 - `-f, --format` - Output format: `storage` (default), `html`, or `markdown`
 
-**Pages Command Flags:**
+**Pages List Command Flags:**
 - `-s, --space` - Confluence space key (optional if `--project` supplied)
 - `-p, --parent` - Parent page title to start hierarchy from (optional)
 - `-P, --project` - Project name to infer space
 
-**Pages Show Command Flags:**
+**Pages Get Command Flags:**
 - `-s, --space` - Confluence space key (optional if `--project` supplied)
 - `-P, --project` - Project name to infer space
 - `-p, --page` - Page ID or title to inspect (optional)
@@ -617,7 +618,11 @@ conflux sync -docs ./documentation -config prod.yaml -dry-run -verbose
 
 ## Recent Improvements
 
-### v1.3.0 (Latest)
+### v1.4.0 (Latest)
+- **✅ Harmonized page commands** - Replaced `get-page` with `pull` and introduced `pages list` and `pages get` subcommands for a more consistent CLI experience.
+- **✅ Improved test coverage** - Added more tests for the new commands.
+
+### v1.3.0
 - **✅ Upload command** - Added `upload` for quickly creating/updating a single markdown file as a Confluence page
 - **✅ Image attachment support** - Automatically detect and upload images referenced in markdown files
   - **Automatic detection**: Finds `![alt](image.png)` syntax in markdown content
