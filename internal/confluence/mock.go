@@ -1,5 +1,11 @@
 package confluence
 
+import (
+	"context"
+	"fmt"
+	"io"
+)
+
 // MockClient is an in-memory implementation of ConfluenceClient for tests.
 type MockClient struct {
 	Pages            map[string]*Page        // pageID -> Page
@@ -102,6 +108,10 @@ func (m *MockClient) ListAttachments(pageID string) ([]Attachment, error) {
 func (m *MockClient) GetAttachmentDownloadURL(pageID, attachmentID string) (string, error) {
 	// Return a dummy local path for testing
 	return "attachments/" + attachmentID, nil
+}
+
+func (m *MockClient) DownloadAttachment(ctx context.Context, pageID, attachmentID string) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("attachment download not configured for page %s attachment %s", pageID, attachmentID)
 }
 
 var _ ConfluenceClient = (*MockClient)(nil)

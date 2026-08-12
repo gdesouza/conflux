@@ -145,13 +145,13 @@ func TestGetAttachmentDownloadURL(t *testing.T) {
 	}
 }
 
-func TestDoAuthenticatedRequest(t *testing.T) {
+func TestAuthenticatedTransport(t *testing.T) {
 	client, mockTransport := createTestClient()
 
 	mockTransport.addResponse("GET", "/wiki/test-auth", http.StatusOK, "ok")
 
 	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/test-auth", client.baseURL), nil)
-	_, err := client.DoAuthenticatedRequest(req)
+	_, err := client.doAuthenticated(req)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

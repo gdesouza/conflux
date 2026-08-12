@@ -1,10 +1,10 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -24,6 +24,10 @@ var (
 	pullFormat    string
 	pullProject   string
 )
+
+type attachmentDownloader interface {
+	DownloadAttachment(ctx context.Context, pageID, attachmentID string) (io.ReadCloser, error)
+}
 
 // pullCmd returns the raw page storage content for a page
 var pullCmd = &cobra.Command{
@@ -127,46 +131,35 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Debug("Found %d attachments for page %s", len(attachments), page.ID)
+	downloader, canDownload := client.(attachmentDownloader)
 	for _, att := range attachments {
 		log.Debug("Attachment: ID=%s Title=%s MediaType=%s Download=%s", att.ID, att.Title, att.MediaType, att.Links.Download)
-		downloadURL, err := client.GetAttachmentDownloadURL(page.ID, att.ID)
-		if err != nil {
-			log.Debug("failed to get download URL for attachment %s: %v", att.Title, err)
-			continue
-		}
 		localPath := fmt.Sprintf("%s/%s", attachmentDir, att.Title)
-		req, err := http.NewRequest("GET", downloadURL, nil)
-		if err != nil {
-			log.Debug("Failed to create request for attachment %s: %v", att.Title, err)
+		if !canDownload {
+			log.Debug("Confluence adapter does not support attachment downloads")
 			continue
 		}
-		req.SetBasicAuth(cfg.Confluence.Username, cfg.Confluence.APIToken)
-		realClient, ok := client.(*confluence.Client)
-		if !ok {
-			log.Debug("Failed to access underlying HTTP client for attachment download")
-			continue
-		}
-		resp, err := realClient.DoAuthenticatedRequest(req)
+		body, err := downloader.DownloadAttachment(context.Background(), page.ID, att.ID)
 		if err != nil {
 			log.Debug("Failed to download attachment %s: %v", att.Title, err)
-			continue
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			log.Debug("Failed to download attachment %s: status %d, body: %s", att.Title, resp.StatusCode, string(body))
 			continue
 		}
 		log.Debug("Saving attachment to %s", localPath)
 		f, err := os.Create(localPath)
 		if err != nil {
+			_ = body.Close()
 			log.Debug("Failed to create local file for attachment %s: %v", att.Title, err)
 			continue
 		}
-		_, err = io.Copy(f, resp.Body)
-		f.Close()
+		_, err = io.Copy(f, body)
+		closeBodyErr := body.Close()
+		closeFileErr := f.Close()
 		if err != nil {
 			log.Debug("Failed to save attachment %s: %v", att.Title, err)
+			continue
+		}
+		if closeBodyErr != nil || closeFileErr != nil {
+			log.Debug("Failed to close attachment %s: response=%v file=%v", att.Title, closeBodyErr, closeFileErr)
 			continue
 		}
 		// Replace inline markdown references

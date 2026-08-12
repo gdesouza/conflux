@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"conflux/pkg/logger"
 )
@@ -40,6 +42,8 @@ type Client struct {
 	client   *http.Client
 	logger   *logger.Logger
 }
+
+const defaultHTTPTimeout = 30 * time.Second
 
 type Page struct {
 	ID    string `json:"id,omitempty"`
@@ -77,20 +81,22 @@ type Attachment struct {
 }
 
 func New(baseURL, username, apiToken string) *Client {
-	return &Client{
-		baseURL:  baseURL,
-		username: username,
-		apiToken: apiToken,
-		client:   &http.Client{},
-	}
+	return NewWithHTTPClient(baseURL, username, apiToken, nil, nil)
 }
 
 func NewClient(baseURL, username, apiToken string, log *logger.Logger) *Client {
+	return NewWithHTTPClient(baseURL, username, apiToken, log, nil)
+}
+
+func NewWithHTTPClient(baseURL, username, apiToken string, log *logger.Logger, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
+	}
 	return &Client{
-		baseURL:  baseURL,
+		baseURL:  strings.TrimRight(baseURL, "/"),
 		username: username,
 		apiToken: apiToken,
-		client:   &http.Client{},
+		client:   httpClient,
 		logger:   log,
 	}
 }
@@ -123,10 +129,9 @@ func (c *Client) CreatePage(spaceKey, title, content string) (*Page, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -180,10 +185,9 @@ func (c *Client) CreatePageWithParent(spaceKey, title, content, parentID string)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -242,25 +246,24 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusForbidden {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 			return nil, &PageUpdateForbiddenError{
 				PageID: pageID,
 				Title:  title,
 				Msg:    fmt.Sprintf("API request failed with status %d: %s", resp.StatusCode, body),
 			}
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
+		return nil, responseError(resp)
 	}
 
 	var result Page
@@ -277,9 +280,7 @@ func (c *Client) GetPage(pageID string) (*Page, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -309,9 +310,7 @@ func (c *Client) FindPageByTitle(spaceKey, title string) (*Page, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -391,9 +390,7 @@ func (c *Client) getAllPagesWithParents(spaceKey string) (map[string]PageInfo, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -487,9 +484,7 @@ func (c *Client) getChildPages(pageID string) ([]PageInfo, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -554,11 +549,10 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Atlassian-Token", "no-check")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -603,32 +597,53 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 
 // ListAttachments returns all attachments for a page
 func (c *Client) ListAttachments(pageID string) ([]Attachment, error) {
-	// v2 API endpoint
-	req, err := http.NewRequest("GET", c.baseURL+"/api/v2/pages/"+pageID+"/attachments", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.SetBasicAuth(c.username, c.apiToken)
-	req.Header.Set("Accept", "application/json")
+	return c.ListAttachmentsContext(context.Background(), pageID)
+}
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
+func (c *Client) ListAttachmentsContext(ctx context.Context, pageID string) ([]Attachment, error) {
+	nextURL := c.baseURL + "/api/v2/pages/" + url.PathEscape(pageID) + "/attachments"
+	var attachments []Attachment
+	for nextURL != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create attachment list request: %w", err)
+		}
+		req.Header.Set("Accept", "application/json")
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, body)
-	}
+		resp, err := c.doAuthenticated(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			err := responseError(resp)
+			_ = resp.Body.Close()
+			return nil, err
+		}
 
-	var result struct {
-		Results []Attachment `json:"results"`
+		var result struct {
+			Results []Attachment `json:"results"`
+			Links   struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		closeErr := resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode attachment list response: %w", decodeErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close attachment list response: %w", closeErr)
+		}
+		attachments = append(attachments, result.Results...)
+		nextURL = ""
+		if result.Links.Next != "" {
+			nextURL, err = c.resolveURL(result.Links.Next)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-	return result.Results, nil
+	return attachments, nil
 }
 
 // findAttachmentByFilename looks for an existing attachment with the given filename on a page
@@ -638,9 +653,7 @@ func (c *Client) findAttachmentByFilename(pageID, filename string) (*Attachment,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -687,12 +700,6 @@ func (c *Client) GetAttachmentDownloadURL(pageID, attachmentID string) (string, 
 	return "", fmt.Errorf("attachment %s not found for page %s", attachmentID, pageID)
 }
 
-// DoAuthenticatedRequest performs an HTTP request with Confluence authentication
-func (c *Client) DoAuthenticatedRequest(req *http.Request) (*http.Response, error) {
-	req.SetBasicAuth(c.username, c.apiToken)
-	return c.client.Do(req)
-}
-
 // Helper functions for debug logging
 func containsChildrenMacro(content string) bool {
 	return strings.Contains(content, "ac:structured-macro ac:name=\"children\"") ||
@@ -725,9 +732,7 @@ func (c *Client) GetPageAncestors(pageID string) ([]PageInfo, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.apiToken)
-
-	resp, err := c.client.Do(req)
+	resp, err := c.doAuthenticated(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
