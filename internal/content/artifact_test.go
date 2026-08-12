@@ -25,7 +25,7 @@ func TestPathsFor(t *testing.T) {
 }
 
 func TestPathsForRejectsInvalidMarkdownPath(t *testing.T) {
-	for _, path := range []string{"", "page.txt", "docs/"} {
+	for _, path := range []string{"", "page.txt", "docs/", ".md"} {
 		t.Run(path, func(t *testing.T) {
 			if _, err := PathsFor(path); err == nil {
 				t.Fatalf("PathsFor(%q) unexpectedly succeeded", path)
@@ -94,6 +94,13 @@ func TestLoadMetadataNotFound(t *testing.T) {
 	}
 }
 
+func TestLoadMetadataRejectsUnreadablePath(t *testing.T) {
+	_, err := LoadMetadata(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "read artifact metadata") {
+		t.Fatalf("error = %v, want read failure", err)
+	}
+}
+
 func TestLoadMetadataRejectsMalformedAndUnknownFields(t *testing.T) {
 	tests := map[string]string{
 		"malformed":     `{`,
@@ -130,6 +137,10 @@ func TestMetadataValidation(t *testing.T) {
 			metadata.Attachments = append(metadata.Attachments, AttachmentMetadata{Filename: "DIAGRAM.PNG"})
 		},
 		"empty fragment": func(metadata *Metadata) { metadata.PreservedFragments["fragment-0001"] = "" },
+		"empty fragment id": func(metadata *Metadata) {
+			metadata.PreservedFragments = map[string]string{"": "<p>fragment</p>"}
+		},
+		"empty attachment filename": func(metadata *Metadata) { metadata.Attachments[0].Filename = "" },
 	}
 
 	for name, mutate := range tests {
@@ -143,6 +154,42 @@ func TestMetadataValidation(t *testing.T) {
 	}
 }
 
+func TestArtifactMetadataRejectsInvalidMarkdownPath(t *testing.T) {
+	if _, err := LoadArtifactMetadata("page.txt"); err == nil {
+		t.Fatal("LoadArtifactMetadata accepted a non-Markdown path")
+	}
+	if err := SaveArtifactMetadata("page.txt", validMetadata()); err == nil {
+		t.Fatal("SaveArtifactMetadata accepted a non-Markdown path")
+	}
+}
+
+func TestSaveMetadataRejectsInvalidMetadata(t *testing.T) {
+	metadata := validMetadata()
+	metadata.Page.ID = ""
+	if err := SaveMetadata(filepath.Join(t.TempDir(), "metadata.json"), metadata); err == nil {
+		t.Fatal("SaveMetadata accepted invalid metadata")
+	}
+}
+
+func TestSaveMetadataRejectsInvalidDirectoryAndReplacement(t *testing.T) {
+	root := t.TempDir()
+	parentFile := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(parentFile, []byte("file"), 0o600); err != nil {
+		t.Fatalf("write parent file: %v", err)
+	}
+	if err := SaveMetadata(filepath.Join(parentFile, "metadata.json"), validMetadata()); err == nil {
+		t.Fatal("SaveMetadata created metadata beneath a file")
+	}
+
+	targetDirectory := filepath.Join(root, "metadata.json")
+	if err := os.Mkdir(targetDirectory, 0o755); err != nil {
+		t.Fatalf("create target directory: %v", err)
+	}
+	if err := SaveMetadata(targetDirectory, validMetadata()); err == nil || !strings.Contains(err.Error(), "replace artifact metadata") {
+		t.Fatalf("error = %v, want replacement failure", err)
+	}
+}
+
 func TestValidateArtifact(t *testing.T) {
 	metadata := validMetadata()
 	markdown := "# Deployment\n\n<!-- conflux:preserved id=\"fragment-0001\" -->\n"
@@ -153,6 +200,20 @@ func TestValidateArtifact(t *testing.T) {
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", result.Warnings)
+	}
+}
+
+func TestValidateStandaloneMarkdownWithoutMetadata(t *testing.T) {
+	if _, err := ValidateArtifact("# New page\n", nil); err != nil {
+		t.Fatalf("standalone Markdown was rejected: %v", err)
+	}
+}
+
+func TestValidateArtifactRejectsInvalidMetadata(t *testing.T) {
+	metadata := validMetadata()
+	metadata.Page.ID = ""
+	if _, err := ValidateArtifact("# Deployment\n", &metadata); err == nil {
+		t.Fatal("ValidateArtifact accepted invalid metadata")
 	}
 }
 
