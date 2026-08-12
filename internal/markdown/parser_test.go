@@ -623,3 +623,193 @@ More content.`
 		t.Error("Expected h2 header")
 	}
 }
+
+func TestConvertTable(t *testing.T) {
+	markdown := `| Epic | Status |
+| --- | :---: |
+| [PSS-1](https://example.com/PSS-1) | **In Progress** |
+| a \| b | plain |`
+
+	result := ConvertToConfluenceFormat(markdown)
+
+	expected := "<table><tbody>" +
+		"<tr><th>Epic</th><th>Status</th></tr>" +
+		`<tr><td><a href="https://example.com/PSS-1">PSS-1</a></td><td><strong>In Progress</strong></td></tr>` +
+		"<tr><td>a | b</td><td>plain</td></tr>" +
+		"</tbody></table>"
+
+	if !strings.Contains(result, expected) {
+		t.Errorf("Expected table markup\n%s\ngot\n%s", expected, result)
+	}
+}
+
+func TestConvertTableRequiresDelimiterRow(t *testing.T) {
+	// A pipe line with no delimiter row underneath is not a table.
+	result := ConvertToConfluenceFormat("| not | a table |")
+
+	if strings.Contains(result, "<table>") {
+		t.Errorf("Expected no table without a delimiter row, got %s", result)
+	}
+}
+
+func TestConvertTableStopsAtNonTableLine(t *testing.T) {
+	markdown := `| A |
+| --- |
+| 1 |
+
+After the table.`
+
+	result := ConvertToConfluenceFormat(markdown)
+
+	if strings.Count(result, "<table>") != 1 || !strings.Contains(result, "</tbody></table>") {
+		t.Errorf("Expected a single closed table, got %s", result)
+	}
+	if !strings.Contains(result, "<p>After the table.</p>") {
+		t.Errorf("Expected paragraph after table, got %s", result)
+	}
+}
+
+func TestRawHTMLPassthrough(t *testing.T) {
+	markdown := `<!-- marker:begin -->
+<ac:structured-macro ac:name="toc"/>
+<!-- marker:end -->`
+
+	result := ConvertToConfluenceFormat(markdown)
+
+	for _, want := range []string{
+		"<!-- marker:begin -->",
+		`<ac:structured-macro ac:name="toc"/>`,
+		"<!-- marker:end -->",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("Expected raw markup %q to pass through, got %s", want, result)
+		}
+	}
+	if strings.Contains(result, "&lt;") {
+		t.Errorf("Expected raw markup not to be escaped, got %s", result)
+	}
+}
+
+func TestDetailsBecomesExpandMacro(t *testing.T) {
+	markdown := `<details><summary><b>PSS-1</b> — Some epic</summary>
+
+Body text.
+
+</details>`
+
+	result := ConvertToConfluenceFormat(markdown)
+
+	wantOpen := `<ac:structured-macro ac:name="expand" ac:schema-version="1">` +
+		`<ac:parameter ac:name="title">PSS-1 — Some epic</ac:parameter><ac:rich-text-body>`
+	if !strings.Contains(result, wantOpen) {
+		t.Errorf("Expected expand macro open\n%s\ngot\n%s", wantOpen, result)
+	}
+	if !strings.Contains(result, "</ac:rich-text-body></ac:structured-macro>") {
+		t.Errorf("Expected expand macro to be closed, got %s", result)
+	}
+	if !strings.Contains(result, "<p>Body text.</p>") {
+		t.Errorf("Expected body inside expand, got %s", result)
+	}
+}
+
+func TestDetailsWithoutSummaryGetsDefaultTitle(t *testing.T) {
+	result := ConvertToConfluenceFormat("<details>\nBody.\n</details>")
+
+	if !strings.Contains(result, `<ac:parameter ac:name="title">Details</ac:parameter>`) {
+		t.Errorf("Expected default expand title, got %s", result)
+	}
+}
+
+func TestConvertLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple link",
+			input:    "See [the docs](https://example.com/a?x=1&y=2).",
+			expected: `<a href="https://example.com/a?x=1&amp;y=2">the docs</a>`,
+		},
+		{
+			name:     "formatting inside link text",
+			input:    "[**bold** link](https://example.com)",
+			expected: `<a href="https://example.com"><strong>bold</strong> link</a>`,
+		},
+		{
+			name:     "remote image",
+			input:    "![build](https://ci.example.com/badge.svg)",
+			expected: `<ac:image ac:alt="build"><ri:url ri:value="https://ci.example.com/badge.svg"/></ac:image>`,
+		},
+		{
+			name:     "linked remote badge",
+			input:    "[![#403](https://ci.example.com/badge.svg)](https://ci.example.com/job/403)",
+			expected: `<a href="https://ci.example.com/job/403"><ac:image ac:alt="#403"><ri:url ri:value="https://ci.example.com/badge.svg"/></ac:image></a>`,
+		},
+		{
+			name:     "local image left for attachment processor",
+			input:    "![diagram](./images/diagram.png)",
+			expected: "![diagram](./images/diagram.png)",
+		},
+		{
+			name:     "bare brackets untouched",
+			input:    "an [unlinked] label",
+			expected: "an [unlinked] label",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertInlineFormatting(tt.input)
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("Expected %q in %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestConvertUnderscoreItalic(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"italic at word boundary", "Ticket _(Backlog)_ here", "Ticket <em>(Backlog)</em> here"},
+		{"whole string", "_Done_", "<em>Done</em>"},
+		{"identifier untouched", "perception_tools", "perception_tools"},
+		{"multi-underscore identifier", "avidbots_laser_manager", "avidbots_laser_manager"},
+		{"two identifiers on a line", "foo_bar and baz_qux", "foo_bar and baz_qux"},
+		{"double underscore untouched", "__bold__", "__bold__"},
+		{"unmatched underscore", "a _dangling start", "a _dangling start"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertInlineFormatting(tt.input)
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestDetailsWithSummaryOnOwnLine(t *testing.T) {
+	markdown := "<details>\n<summary>My title</summary>\n\nBody.\n\n</details>"
+
+	result := ConvertToConfluenceFormat(markdown)
+
+	if !strings.Contains(result, `<ac:parameter ac:name="title">My title</ac:parameter>`) {
+		t.Errorf("Expected summary to become the expand title, got %s", result)
+	}
+	if strings.Contains(result, "<summary>") {
+		t.Errorf("Expected the summary tag to be consumed, got %s", result)
+	}
+}
+
+func TestProseStartingWithAngleBracketIsEscaped(t *testing.T) {
+	result := ConvertToConfluenceFormat("<stdin is not a tag")
+
+	if !strings.Contains(result, "&lt;stdin is not a tag") {
+		t.Errorf("Expected prose to be escaped, got %s", result)
+	}
+}

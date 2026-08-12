@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"conflux/internal/config"
@@ -130,7 +131,9 @@ func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, c
 	var codeBlockLang string
 	var codeBlockContent []string
 
-	for _, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
 		// Handle code blocks
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			if !inCodeBlock {
@@ -172,6 +175,42 @@ func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, c
 		if inCodeBlock {
 			// Inside code block - collect content
 			codeBlockContent = append(codeBlockContent, line)
+			continue
+		}
+
+		// Handle tables (GFM pipe tables): a header row followed by a delimiter row
+		if isTableRow(line) && i+1 < len(lines) && isTableDelimiterRow(lines[i+1]) {
+			closeOpenLists(&result, &inUnorderedList, &inOrderedList)
+			tableLines := []string{line}
+			end := i + 2
+			for end < len(lines) && isTableRow(lines[end]) {
+				tableLines = append(tableLines, lines[end])
+				end++
+			}
+			result = append(result, convertTable(tableLines))
+			i = end - 1
+			continue
+		}
+
+		// Handle raw HTML / Confluence storage markup - pass it through untouched
+		// so users can drop in <ac:...> macros, comments and plain HTML blocks.
+		if isRawHTMLLine(line) {
+			closeOpenLists(&result, &inUnorderedList, &inOrderedList)
+			trimmed := strings.TrimSpace(line)
+
+			// A bare <details> may be followed by <summary> on the next
+			// non-empty line; that summary is the expand macro's title.
+			if m := detailsOpenPattern.FindStringSubmatch(trimmed); m != nil && m[1] == "" {
+				if next := nextNonEmptyLine(lines, i+1); next != -1 {
+					if s := summaryOnlyPattern.FindStringSubmatch(strings.TrimSpace(lines[next])); s != nil {
+						result = append(result, expandMacroOpen(s[1]))
+						i = next
+						continue
+					}
+				}
+			}
+
+			result = append(result, convertRawHTMLLine(trimmed))
 			continue
 		}
 
@@ -276,9 +315,223 @@ func convertInlineFormatting(text string) string {
 	text = convertBoldFromEscaped(text)
 	// Handle italic (*text* or _text_)
 	text = convertItalicFromEscaped(text)
+	text = convertUnderscoreItalicFromEscaped(text)
 	// Handle inline code
 	text = convertInlineCodeFromEscaped(text)
+	// Handle links last so formatting inside the link text is already converted
+	text = convertLinksFromEscaped(text)
 	return text
+}
+
+// convertLinksFromEscaped converts [text](url) links and ![alt](url) images.
+// Bracket matching is done by hand rather than with a regex so that nested
+// forms such as a linked badge - [![alt](image)](target) - survive intact.
+//
+// Images pointing at a remote URL become <ri:url> image macros. Images pointing
+// at a local file are left as markdown, because ConvertToConfluenceFormatWithImages
+// replaces those later by matching on the original markdown syntax.
+func convertLinksFromEscaped(text string) string {
+	var b strings.Builder
+
+	for i := 0; i < len(text); {
+		start := i
+		isImage := text[i] == '!' && i+1 < len(text) && text[i+1] == '['
+		open := i
+		if isImage {
+			open = i + 1
+		}
+
+		labelEnd := matchDelimiter(text, open, '[', ']')
+		if text[open] != '[' || labelEnd == -1 || labelEnd+1 >= len(text) || text[labelEnd+1] != '(' {
+			b.WriteByte(text[start])
+			i = start + 1
+			continue
+		}
+
+		urlEnd := matchDelimiter(text, labelEnd+1, '(', ')')
+		if urlEnd == -1 {
+			b.WriteByte(text[start])
+			i = start + 1
+			continue
+		}
+
+		label := text[open+1 : labelEnd]
+		target := strings.TrimSpace(text[labelEnd+2 : urlEnd])
+
+		switch {
+		case isImage && isRemoteURL(target):
+			fmt.Fprintf(&b, `<ac:image ac:alt="%s"><ri:url ri:value="%s"/></ac:image>`, stripHTMLTags(label), target)
+		case isImage:
+			// Local image - leave the markdown for the attachment processor.
+			b.WriteString(text[start : urlEnd+1])
+		default:
+			fmt.Fprintf(&b, `<a href="%s">%s</a>`, target, convertLinksFromEscaped(label))
+		}
+		i = urlEnd + 1
+	}
+
+	return b.String()
+}
+
+// matchDelimiter returns the index of the delimiter closing the one at openIdx,
+// accounting for nesting, or -1 when there is no match.
+func matchDelimiter(s string, openIdx int, open, close byte) int {
+	if openIdx >= len(s) || s[openIdx] != open {
+		return -1
+	}
+	depth := 0
+	for i := openIdx; i < len(s); i++ {
+		switch s[i] {
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isRemoteURL(target string) bool {
+	return strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
+}
+
+// isTableRow reports whether the line looks like a pipe table row.
+func isTableRow(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "|")
+}
+
+var tableDelimiterCell = regexp.MustCompile(`^:?-+:?$`)
+
+// isTableDelimiterRow reports whether the line is the |---|---| separator that
+// follows a pipe table's header row.
+func isTableDelimiterRow(line string) bool {
+	if !isTableRow(line) {
+		return false
+	}
+	cells := splitTableRow(line)
+	if len(cells) == 0 {
+		return false
+	}
+	for _, cell := range cells {
+		if !tableDelimiterCell.MatchString(cell) {
+			return false
+		}
+	}
+	return true
+}
+
+// splitTableRow splits a pipe table row into its cells, honouring \| escapes.
+func splitTableRow(line string) []string {
+	s := strings.TrimSpace(line)
+	s = strings.TrimPrefix(s, "|")
+	s = strings.TrimSuffix(s, "|")
+
+	var cells []string
+	var current strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && s[i+1] == '|' {
+			current.WriteByte('|')
+			i++
+			continue
+		}
+		if s[i] == '|' {
+			cells = append(cells, strings.TrimSpace(current.String()))
+			current.Reset()
+			continue
+		}
+		current.WriteByte(s[i])
+	}
+	cells = append(cells, strings.TrimSpace(current.String()))
+	return cells
+}
+
+// convertTable renders a pipe table (header row, delimiter row, body rows) as
+// Confluence storage format. Header cells use <th>, matching the markup
+// Confluence itself produces.
+func convertTable(tableLines []string) string {
+	var b strings.Builder
+	b.WriteString("<table><tbody>")
+
+	b.WriteString("<tr>")
+	for _, cell := range splitTableRow(tableLines[0]) {
+		fmt.Fprintf(&b, "<th>%s</th>", convertInlineFormatting(cell))
+	}
+	b.WriteString("</tr>")
+
+	for _, row := range tableLines[1:] {
+		b.WriteString("<tr>")
+		for _, cell := range splitTableRow(row) {
+			fmt.Fprintf(&b, "<td>%s</td>", convertInlineFormatting(cell))
+		}
+		b.WriteString("</tr>")
+	}
+
+	b.WriteString("</tbody></table>")
+	return b.String()
+}
+
+// rawHTMLLinePattern matches a line that starts with an HTML/XML tag or comment.
+var rawHTMLLinePattern = regexp.MustCompile(`^<(!--|/?[A-Za-z][A-Za-z0-9]*(:[A-Za-z][A-Za-z0-9-]*)?)`)
+
+// isRawHTMLLine reports whether the line should be passed through as markup
+// rather than escaped into a paragraph. The line must both open with a tag and
+// close it, so prose that merely starts with a "<" is still escaped.
+func isRawHTMLLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if !rawHTMLLinePattern.MatchString(trimmed) {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "<!--") {
+		return strings.Contains(trimmed, "-->")
+	}
+	return strings.Contains(trimmed, ">")
+}
+
+func nextNonEmptyLine(lines []string, from int) int {
+	for i := from; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+var (
+	detailsOpenPattern = regexp.MustCompile(`(?is)^<details[^>]*>\s*(?:<summary[^>]*>(.*?)</summary>)?\s*$`)
+	summaryOnlyPattern = regexp.MustCompile(`(?is)^<summary[^>]*>(.*?)</summary>\s*$`)
+	htmlTagPattern     = regexp.MustCompile(`<[^>]*>`)
+)
+
+// convertRawHTMLLine passes raw markup through, translating the <details> /
+// <summary> pair into Confluence's expand macro. Confluence storage format has
+// no <details> element, so a verbatim copy would be dropped by the server.
+func convertRawHTMLLine(line string) string {
+	if m := detailsOpenPattern.FindStringSubmatch(line); m != nil {
+		return expandMacroOpen(m[1])
+	}
+	if m := summaryOnlyPattern.FindStringSubmatch(line); m != nil {
+		// A <summary> on its own line, immediately after a bare <details>.
+		return fmt.Sprintf("<p><strong>%s</strong></p>", escapeHTML(stripHTMLTags(m[1])))
+	}
+	if strings.EqualFold(strings.TrimSpace(line), "</details>") {
+		return "</ac:rich-text-body></ac:structured-macro>"
+	}
+	return line
+}
+
+func expandMacroOpen(summary string) string {
+	title := strings.TrimSpace(stripHTMLTags(summary))
+	if title == "" {
+		title = "Details"
+	}
+	return fmt.Sprintf(`<ac:structured-macro ac:name="expand" ac:schema-version="1"><ac:parameter ac:name="title">%s</ac:parameter><ac:rich-text-body>`, escapeHTML(title))
+}
+
+func stripHTMLTags(text string) string {
+	return htmlTagPattern.ReplaceAllString(text, "")
 }
 
 func convertBoldFromEscaped(text string) string {
@@ -332,6 +585,68 @@ func convertItalicFromEscaped(text string) string {
 		i++
 	}
 	return text
+}
+
+// convertUnderscoreItalicFromEscaped handles _italic_. Underscores only open or
+// close emphasis at a word boundary, so identifiers such as perception_tools or
+// avidbots_laser_manager are left alone.
+func convertUnderscoreItalicFromEscaped(text string) string {
+	for i := 0; i < len(text); i++ {
+		if !isUnderscoreOpener(text, i) {
+			continue
+		}
+		closer := -1
+		for j := i + 1; j < len(text); j++ {
+			if isUnderscoreCloser(text, j) {
+				closer = j
+				break
+			}
+		}
+		if closer == -1 {
+			continue
+		}
+		italic := text[i+1 : closer]
+		text = text[:i] + "<em>" + italic + "</em>" + text[closer+1:]
+		i += len("<em>") + len(italic) + len("</em>")
+	}
+	return text
+}
+
+func isUnderscoreOpener(text string, i int) bool {
+	if text[i] != '_' {
+		return false
+	}
+	// Not adjacent to another underscore (avoids mangling __bold__).
+	if (i > 0 && text[i-1] == '_') || (i+1 < len(text) && text[i+1] == '_') {
+		return false
+	}
+	// Preceded by a boundary, followed by content.
+	if i > 0 && isWordByte(text[i-1]) {
+		return false
+	}
+	return i+1 < len(text) && text[i+1] != ' '
+}
+
+func isUnderscoreCloser(text string, j int) bool {
+	if text[j] != '_' {
+		return false
+	}
+	if (j > 0 && text[j-1] == '_') || (j+1 < len(text) && text[j+1] == '_') {
+		return false
+	}
+	// Preceded by content, followed by a boundary.
+	if j == 0 || text[j-1] == ' ' {
+		return false
+	}
+	return j+1 >= len(text) || !isWordByte(text[j+1])
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c >= 0x80 // treat multi-byte UTF-8 as word content
 }
 
 func convertInlineCodeFromEscaped(text string) string {
