@@ -65,8 +65,8 @@ func (m Metadata) Validate() error {
 	}
 
 	for id, fragment := range m.PreservedFragments {
-		if strings.TrimSpace(id) == "" {
-			return fmt.Errorf("preserved fragment id is required")
+		if !preservedFragmentID.MatchString(id) {
+			return fmt.Errorf("preserved fragment id %q is invalid", id)
 		}
 		if strings.TrimSpace(fragment) == "" {
 			return fmt.Errorf("preserved fragment %q is empty", id)
@@ -84,6 +84,10 @@ func LoadMetadata(path string) (Metadata, error) {
 		return Metadata{}, fmt.Errorf("read artifact metadata: %w", err)
 	}
 
+	if err := rejectDuplicateJSONFields(data); err != nil {
+		return Metadata{}, fmt.Errorf("decode artifact metadata: %w", err)
+	}
+
 	var metadata Metadata
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
@@ -97,6 +101,65 @@ func LoadMetadata(path string) (Metadata, error) {
 		return Metadata{}, fmt.Errorf("validate artifact metadata: %w", err)
 	}
 	return metadata, nil
+}
+
+func rejectDuplicateJSONFields(data []byte) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	if err := inspectJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing content")
+		}
+		return err
+	}
+	return nil
+}
+
+func inspectJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("object key is not a string")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return fmt.Errorf("duplicate JSON field %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := inspectJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		_, err = decoder.Token()
+		return err
+	case '[':
+		for decoder.More() {
+			if err := inspectJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		_, err = decoder.Token()
+		return err
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+	}
 }
 
 func LoadArtifactMetadata(markdownPath string) (Metadata, error) {

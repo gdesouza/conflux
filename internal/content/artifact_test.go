@@ -106,6 +106,18 @@ func TestLoadMetadataRejectsMalformedAndUnknownFields(t *testing.T) {
 		"malformed":     `{`,
 		"unknown field": `{"schema_version":1,"unknown":true}`,
 		"trailing data": `{"schema_version":1} {}`,
+		"duplicate page field": `{
+  "schema_version": 1,
+  "page": {"id":"123", "id":"456", "space_key":"DOCS", "title":"Page", "base_version":1},
+  "preserved_fragments": {},
+  "attachments": []
+}`,
+		"duplicate fragment field": `{
+  "schema_version": 1,
+  "page": {"id":"123", "space_key":"DOCS", "title":"Page", "base_version":1},
+  "preserved_fragments": {"fragment-1":"<p>one</p>", "fragment-1":"<p>two</p>"},
+  "attachments": []
+}`,
 	}
 	for name, document := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -139,6 +151,9 @@ func TestMetadataValidation(t *testing.T) {
 		"empty fragment": func(metadata *Metadata) { metadata.PreservedFragments["fragment-0001"] = "" },
 		"empty fragment id": func(metadata *Metadata) {
 			metadata.PreservedFragments = map[string]string{"": "<p>fragment</p>"}
+		},
+		"unrepresentable fragment id": func(metadata *Metadata) {
+			metadata.PreservedFragments = map[string]string{"fragment 1": "<p>fragment</p>"}
 		},
 		"empty attachment filename": func(metadata *Metadata) { metadata.Attachments[0].Filename = "" },
 	}
@@ -220,10 +235,11 @@ func TestValidateArtifactRejectsInvalidMetadata(t *testing.T) {
 func TestValidateArtifactRejectsUnsafeMarkers(t *testing.T) {
 	metadata := validMetadata()
 	tests := map[string]string{
-		"missing metadata": "<!-- conflux:preserved id=\"fragment-0001\" -->",
-		"malformed":        "<!-- conflux:preserved id='fragment-0001' -->",
-		"duplicate":        "<!-- conflux:preserved id=\"fragment-0001\" -->\n<!-- conflux:preserved id=\"fragment-0001\" -->",
-		"unknown":          "<!-- conflux:preserved id=\"fragment-9999\" -->",
+		"missing metadata":  "<!-- conflux:preserved id=\"fragment-0001\" -->",
+		"malformed":         "<!-- conflux:preserved id='fragment-0001' -->",
+		"malformed spacing": "<!--  conflux:preserved id='fragment-0001' -->",
+		"duplicate":         "<!-- conflux:preserved id=\"fragment-0001\" -->\n<!-- conflux:preserved id=\"fragment-0001\" -->",
+		"unknown":           "<!-- conflux:preserved id=\"fragment-9999\" -->",
 	}
 
 	for name, markdown := range tests {
@@ -236,6 +252,30 @@ func TestValidateArtifactRejectsUnsafeMarkers(t *testing.T) {
 				t.Fatal("ValidateArtifact unexpectedly succeeded")
 			}
 		})
+	}
+}
+
+func TestValidateArtifactIgnoresMarkersInCode(t *testing.T) {
+	markdown := "# Marker documentation\n\n" +
+		"`<!-- conflux:preserved id=\"inline-example\" -->`\n\n" +
+		"```markdown\n<!-- conflux:preserved id=\"fenced-example\" -->\n```\n\n" +
+		"~~~html\n<!--  conflux:preserved id='malformed-example' -->\n~~~\n"
+
+	if _, err := ValidateArtifact(markdown, nil); err != nil {
+		t.Fatalf("marker documentation in code was treated as active: %v", err)
+	}
+}
+
+func TestValidateArtifactFindsMarkerOutsideCode(t *testing.T) {
+	metadata := validMetadata()
+	markdown := "`<!-- conflux:preserved id=\"example\" -->`\n\n" +
+		"<!-- conflux:preserved id=\"fragment-0001\" -->\n"
+	result, err := ValidateArtifact(markdown, &metadata)
+	if err != nil {
+		t.Fatalf("ValidateArtifact returned error: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", result.Warnings)
 	}
 }
 
