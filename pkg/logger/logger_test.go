@@ -2,7 +2,6 @@ package logger
 
 import (
 	"bytes"
-
 	"os"
 	"strings"
 	"testing"

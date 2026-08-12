@@ -1,27 +1,63 @@
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(conflux)
-  misspell:
-    locale: US
-
-issues:
-  exclude-rules:
-    # Exclude G204 (subprocess with tainted input) for Mermaid processor - this is intentional
-    - path: internal/mermaid/processor.go
-      linters:
-        - gosec
-      text: "G204:"
-
+version: "2"
 linters:
+  enable:
+    - gosec
+    - misspell
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+        path: internal/mermaid/processor.go
+        text: 'G204:'
+      # Existing credential DTO fields are configuration values, not hard-coded secrets.
+      - linters:
+          - gosec
+        path: (internal/config/config.go|cmd/conflux/commands/config.go)
+        text: 'G117:'
+      # Phase 3 replaces these narrow legacy transport and temporary-file findings.
+      - linters:
+          - gosec
+        path: internal/confluence/client.go
+        text: 'G704:'
+      - linters:
+          - gosec
+        path: internal/mermaid/processor.go
+        text: 'G703:'
+      # Sync is frozen pending removal; avoid unrelated modernization in Phase 0.
+      - linters:
+          - staticcheck
+        path: internal/sync/rename_detection.go
+        text: 'QF1003:'
+      - linters:
+          - unused
+        path: internal/sync/syncer.go
+        text: processImagesWithTracking
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
   enable:
     - gci
     - gofmt
-    - govet
-    - misspell
-    - staticcheck
-    - unused
-    - gosec
-    - errcheck
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(conflux)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

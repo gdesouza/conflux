@@ -423,7 +423,7 @@ func isTableDelimiterRow(line string) bool {
 	return true
 }
 
-// splitTableRow splits a pipe table row into its cells, honouring \| escapes.
+// splitTableRow splits a pipe table row into its cells, honoring \| escapes.
 func splitTableRow(line string) []string {
 	s := strings.TrimSpace(line)
 	s = strings.TrimPrefix(s, "|")

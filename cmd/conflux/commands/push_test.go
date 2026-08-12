@@ -18,6 +18,11 @@ local:
   markdown_dir: ./docs
 mermaid:
   mode: preserve
+projects:
+  - name: team-docs
+    space_key: TEAM
+    local:
+      markdown_dir: ./team-docs
 `
 
 func writePushTempConfig(t *testing.T) string {
@@ -32,6 +37,41 @@ func writePushTempConfig(t *testing.T) string {
 		t.Fatalf("close cfg: %v", err)
 	}
 	return f.Name()
+}
+
+func resetPushFlags() {
+	pushFile = ""
+	pushSpace = ""
+	pushParent = ""
+	pushProject = ""
+}
+
+func TestPushProjectSelectionInfersSpace(t *testing.T) {
+	resetPushFlags()
+	t.Cleanup(resetPushFlags)
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "profile.md")
+	if err := os.WriteFile(file, []byte("# Profile Page\n\nBody."), 0600); err != nil {
+		t.Fatalf("write markdown: %v", err)
+	}
+
+	configFile = writePushTempConfig(t)
+	verbose = false
+	pushFile = file
+	pushProject = "team-docs"
+
+	mock := confluence.NewMockClient()
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient {
+		return mock
+	}
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	if _, exists := mock.PagesByTitle["TEAM:Profile Page"]; !exists {
+		t.Fatal("push did not use the project space")
+	}
 }
 
 func TestPushCreatesNewPage(t *testing.T) {

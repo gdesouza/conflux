@@ -28,21 +28,9 @@ func TestConfigNonInteractivePrint(t *testing.T) {
 	if err != nil { // validation should pass because project supplies space key
 		t.Fatalf("config command error: %v", err)
 	}
-	// Should not write file because --print
-	if _, statErr := os.Stat(cfgPath); statErr == nil {
-		// file should not exist yet
-		data, _ := os.ReadFile(cfgPath)
-		if len(data) > 0 {
-			// In case underlying logic changed, we allow empty file existence but not content for this test
-			if !strings.Contains(out, "confluence:") {
-				// fallback assertion
-			}
-		}
-	} else if !os.IsNotExist(statErr) {
-		// unexpected error stat-ing file
-		if !strings.Contains(out, "confluence:") {
-			// no further action
-		}
+	// Should not write file because --print.
+	if _, statErr := os.Stat(cfgPath); !os.IsNotExist(statErr) {
+		t.Fatalf("print mode wrote the config file or returned an unexpected stat error: %v", statErr)
 	}
 	// Output YAML should contain key sections and applied overrides
 	mustContain := []string{
@@ -87,11 +75,7 @@ func TestConfigWritesFile(t *testing.T) {
 		t.Fatalf("config command error: %v", err)
 	}
 	if !strings.Contains(out, "Configuration saved") {
-		// Save message printed to stdout after writing
-		// If future changes route to stderr we relax this check but currently expect it
-		// Failing to find indicates unexpected behavior
-		// Debug output for troubleshooting
-		// (No fatal here to reduce flakiness) but we still assert file existence below
+		t.Fatalf("expected save confirmation, got: %s", out)
 	}
 	data, readErr := os.ReadFile(cfgPath)
 	if readErr != nil {
