@@ -1,0 +1,6 @@
+<h1>Deployment Guide</h1>
+<p>Deploy the <strong>release</strong> with <em>care</em> and use <code>conflux</code>.</p>
+<h2>Steps</h2>
+<ol><li>Build the binary</li><li>Push the page</li></ol>
+<ul><li>Check logs</li><li>Verify links</li></ul>
+<p>Read the <a href="https://example.com/runbook">runbook</a>.</p>

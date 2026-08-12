@@ -23,7 +23,9 @@ func TestRunVersion(t *testing.T) {
 	version.Version = "1.2.3"
 	version.GitCommit = "abc"
 	version.BuildDate = "2025-10-23"
-	runVersion(nil, nil)
+	if err := runVersion(nil, nil); err != nil {
+		t.Fatalf("run full version: %v", err)
+	}
 	w.Close()
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
@@ -36,7 +38,9 @@ func TestRunVersion(t *testing.T) {
 	os.Stdout = w
 	shortVersion = true
 	version.Version = "9.9.9"
-	runVersion(nil, nil)
+	if err := runVersion(nil, nil); err != nil {
+		t.Fatalf("run short version: %v", err)
+	}
 	w.Close()
 	buf.Reset()
 	_, _ = buf.ReadFrom(r)
