@@ -218,8 +218,18 @@ func (c *Client) UpdatePage(pageID, title, content string) (*Page, error) {
 		return nil, fmt.Errorf("failed to get current page version: %w", err)
 	}
 
-	// Increment the version number
-	newVersion := currentPage.Version.Number + 1
+	return c.UpdatePageAtVersion(pageID, title, content, currentPage.Version.Number)
+}
+
+// UpdatePageAtVersion updates a page using the caller's observed version. The
+// Confluence API rejects the PUT if another writer has advanced the page in the
+// meantime, closing the race between conflict detection and the update.
+func (c *Client) UpdatePageAtVersion(pageID, title, content string, baseVersion int) (*Page, error) {
+	if baseVersion < 1 {
+		return nil, fmt.Errorf("base version must be positive")
+	}
+
+	newVersion := baseVersion + 1
 
 	page := map[string]interface{}{
 		"id":    pageID,
@@ -517,6 +527,19 @@ func (c *Client) getChildPages(pageID string) ([]PageInfo, error) {
 }
 
 func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) {
+	return c.uploadAttachment(pageID, "", filePath)
+}
+
+// UploadAttachmentVersion replaces the data of an existing attachment while
+// preserving its Confluence identity and version history.
+func (c *Client) UploadAttachmentVersion(pageID, attachmentID, filePath string) (*Attachment, error) {
+	if strings.TrimSpace(attachmentID) == "" {
+		return nil, fmt.Errorf("attachment id is required")
+	}
+	return c.uploadAttachment(pageID, attachmentID, filePath)
+}
+
+func (c *Client) uploadAttachment(pageID, attachmentID, filePath string) (*Attachment, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -544,7 +567,11 @@ func (c *Client) UploadAttachment(pageID, filePath string) (*Attachment, error) 
 	}
 
 	// Create request
-	req, err := http.NewRequest("POST", c.baseURL+"/rest/api/content/"+pageID+"/child/attachment", body)
+	endpoint := c.baseURL + "/rest/api/content/" + pageID + "/child/attachment"
+	if attachmentID != "" {
+		endpoint += "/" + url.PathEscape(attachmentID) + "/data"
+	}
+	req, err := http.NewRequest("POST", endpoint, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

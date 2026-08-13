@@ -416,8 +416,20 @@ conflux push -f ./docs/advanced/optimizer.md -s DOCS -p "Architecture"
 
 # Use project inference (space comes from project config)
 conflux push -f ./docs/core/overview.md -P core
+
+# Push a previously pulled editable artifact
+conflux push -f ./deployment.md
+
+# Explicitly overwrite remote edits made since the artifact was pulled
+conflux push -f ./deployment.md --force
 ```
 Behavior:
+- When the matching `<name>.attachments/metadata.json` exists, push targets the page ID recorded in the artifact rather than searching by title.
+- Editable artifacts are validated and rendered with their preserved Confluence fragments before any remote mutation.
+- Push refuses to overwrite a remote page whose version has advanced since pull. Pull again to merge the changes, or use `--force` explicitly.
+- Only new or changed attachments are uploaded. Existing changed attachments retain their Confluence identity and version history; remote attachments are never deleted implicitly.
+- After a successful page update, `base_version` and uploaded attachment metadata are replaced atomically in `metadata.json`. A failed page update leaves local metadata unchanged.
+- `metadata.json` is never treated as an attachment.
 - Determines the Confluence page title from the first level-1 markdown heading (`# Title`).
 - If a page with that title already exists in the resolved space it is updated; otherwise it is created.
 - Parent page may be provided as a numeric ID or as a title (looked up in the target space).
@@ -425,7 +437,7 @@ Behavior:
 
 Current limitations:
 - The `push` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
-- Artifact-aware push orchestration—including remote version conflict checks and metadata updates—is not connected to the CLI yet. Until that phase lands, do not expect `conflux push` to consume `metadata.json` or preservation markers safely.
+- The basic conversion limitation applies to standalone Markdown. Paired editable artifacts use the fidelity-preserving artifact renderer and attachment workflow described above.
 
 ### Editable Artifact Markdown
 
@@ -579,6 +591,7 @@ Notes:
 - `-s, --space` - Confluence space key (optional if `--project` supplied)
 - `-P, --project` - Project name to infer space
 - `-p, --parent` - Parent page title or numeric ID (optional)
+- `--force` - Overwrite an editable artifact page even if its remote version changed since pull
 
 **Pull Command Flags:**
 - `-s, --space` - Confluence space key (optional if `--project` supplied)

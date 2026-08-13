@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -308,6 +310,69 @@ func TestUpdatePage(t *testing.T) {
 	// Should have made 2 requests: GET for current version, PUT for update
 	if mockTransport.getRequestCount() != 2 {
 		t.Errorf("Expected 2 requests, got %d", mockTransport.getRequestCount())
+	}
+}
+
+func TestUpdatePageAtVersionUsesExpectedVersionWithoutRefetch(t *testing.T) {
+	client, mockTransport := createTestClient()
+	updatedPage := Page{ID: "123456", Title: "Updated Page"}
+	updatedPage.Version.Number = 8
+	mockTransport.addResponse("PUT", "/wiki/rest/api/content/123456", http.StatusOK, updatedPage)
+
+	page, err := client.UpdatePageAtVersion("123456", "Updated Page", "<p>Updated content</p>", 7)
+	if err != nil {
+		t.Fatalf("UpdatePageAtVersion returned error: %v", err)
+	}
+	if page.Version.Number != 8 || mockTransport.getRequestCount() != 1 {
+		t.Fatalf("page version=%d requests=%d, want version 8 and one request", page.Version.Number, mockTransport.getRequestCount())
+	}
+	request := mockTransport.getLastRequest()
+	var payload struct {
+		Version struct {
+			Number int `json:"number"`
+		} `json:"version"`
+	}
+	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode update request: %v", err)
+	}
+	if payload.Version.Number != 8 {
+		t.Fatalf("request version = %d, want 8", payload.Version.Number)
+	}
+}
+
+func TestUpdatePageAtVersionRejectsInvalidBaseVersion(t *testing.T) {
+	client, mockTransport := createTestClient()
+	page, err := client.UpdatePageAtVersion("123456", "Page", "<p>body</p>", 0)
+	if err == nil || page != nil || mockTransport.getRequestCount() != 0 {
+		t.Fatalf("page=%v error=%v requests=%d", page, err, mockTransport.getRequestCount())
+	}
+}
+
+func TestUploadAttachmentVersionUsesDataEndpoint(t *testing.T) {
+	client, mockTransport := createTestClient()
+	file := filepath.Join(t.TempDir(), "diagram.png")
+	if err := os.WriteFile(file, []byte("image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := struct {
+		Results []Attachment `json:"results"`
+	}{Results: []Attachment{{ID: "att-1", Title: "diagram.png"}}}
+	mockTransport.addResponse("POST", "/wiki/rest/api/content/123/child/attachment/att-1/data", http.StatusOK, result)
+
+	attachment, err := client.UploadAttachmentVersion("123", "att-1", file)
+	if err != nil {
+		t.Fatalf("UploadAttachmentVersion returned error: %v", err)
+	}
+	if attachment.ID != "att-1" || mockTransport.getLastRequest().URL.Path != "/wiki/rest/api/content/123/child/attachment/att-1/data" {
+		t.Fatalf("attachment=%#v path=%s", attachment, mockTransport.getLastRequest().URL.Path)
+	}
+}
+
+func TestUploadAttachmentVersionRequiresID(t *testing.T) {
+	client, mockTransport := createTestClient()
+	attachment, err := client.UploadAttachmentVersion("123", " ", "unused")
+	if err == nil || attachment != nil || mockTransport.getRequestCount() != 0 {
+		t.Fatalf("attachment=%v error=%v requests=%d", attachment, err, mockTransport.getRequestCount())
 	}
 }
 
