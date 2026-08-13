@@ -127,6 +127,19 @@ func RenderStorage(page StoragePage) (EditableArtifact, error) {
 				continue
 			}
 		}
+		if jira, ok := parseJiraMacro(node); ok {
+			markdownParts = append(markdownParts, jiraMarkdown(jira))
+			continue
+		}
+		if node.Name.Space == "" && node.Name.Local == "table" {
+			markdown, err := storageTableMarkdown(node.Raw)
+			if err != nil {
+				return EditableArtifact{}, fmt.Errorf("convert Confluence table: %w", err)
+			}
+			layout, width := tableStorageOptions(node.Raw)
+			markdownParts = append(markdownParts, tableDirective(layout, width)+"\n"+strings.TrimSpace(markdown))
+			continue
+		}
 
 		fragmentNumber++
 		fragmentID := fmt.Sprintf("fragment-%04d", fragmentNumber)
