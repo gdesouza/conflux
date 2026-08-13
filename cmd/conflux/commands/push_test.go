@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"conflux/internal/confluence"
+	"conflux/internal/content"
 	"conflux/pkg/logger"
 )
 
@@ -44,6 +48,155 @@ func resetPushFlags() {
 	pushSpace = ""
 	pushParent = ""
 	pushProject = ""
+	pushForce = false
+}
+
+func TestPushEditableArtifactAdvancesMetadataVersion(t *testing.T) {
+	file, metadata := writePushArtifact(t, "Body.\n", nil)
+	mock := artifactPushMock(metadata)
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	updated, err := content.LoadArtifactMetadata(file)
+	if err != nil {
+		t.Fatalf("load updated metadata: %v", err)
+	}
+	if updated.Page.BaseVersion != 8 {
+		t.Fatalf("base version = %d, want 8", updated.Page.BaseVersion)
+	}
+	if len(mock.ExpectedVersions) != 1 || mock.ExpectedVersions[0] != 7 {
+		t.Fatalf("expected versions = %v, want [7]", mock.ExpectedVersions)
+	}
+}
+
+func TestPushEditableArtifactRejectsStaleRemote(t *testing.T) {
+	file, metadata := writePushArtifact(t, "Body.\n", nil)
+	mock := artifactPushMock(metadata)
+	mock.Pages[metadata.Page.ID].Version.Number = 9
+	configurePushTest(t, file, mock)
+
+	err := runPush(pushCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "pull again or use --force") {
+		t.Fatalf("error = %v, want stale-page guidance", err)
+	}
+	if len(mock.UpdateCalls) != 0 {
+		t.Fatal("stale artifact updated the page")
+	}
+	unchanged, _ := content.LoadArtifactMetadata(file)
+	if unchanged.Page.BaseVersion != 7 {
+		t.Fatalf("metadata changed after conflict: %d", unchanged.Page.BaseVersion)
+	}
+}
+
+func TestPushEditableArtifactForceUsesRemoteVersion(t *testing.T) {
+	file, metadata := writePushArtifact(t, "Body.\n", nil)
+	mock := artifactPushMock(metadata)
+	mock.Pages[metadata.Page.ID].Version.Number = 9
+	configurePushTest(t, file, mock)
+	pushForce = true
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	if len(mock.ExpectedVersions) != 1 || mock.ExpectedVersions[0] != 9 {
+		t.Fatalf("expected versions = %v, want [9]", mock.ExpectedVersions)
+	}
+}
+
+func TestPushEditableArtifactSkipsUnchangedAttachment(t *testing.T) {
+	body := []byte("same image")
+	digest := sha256.Sum256(body)
+	attachment := content.AttachmentMetadata{ID: "att-1", Filename: "diagram.png", MediaType: "image/png", SHA256: hex.EncodeToString(digest[:])}
+	file, metadata := writePushArtifact(t, "![diagram](page.attachments/diagram.png)\n", []content.AttachmentMetadata{attachment})
+	paths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(paths.AttachmentsDir, "diagram.png"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	if mock.LastUploadedFile != "" {
+		t.Fatalf("unchanged attachment uploaded from %q", mock.LastUploadedFile)
+	}
+}
+
+func TestPushEditableArtifactVersionsChangedAttachment(t *testing.T) {
+	oldDigest := sha256.Sum256([]byte("old image"))
+	attachment := content.AttachmentMetadata{ID: "att-1", Filename: "diagram.png", MediaType: "image/png", SHA256: hex.EncodeToString(oldDigest[:])}
+	file, metadata := writePushArtifact(t, "![diagram](page.attachments/diagram.png)\n", []content.AttachmentMetadata{attachment})
+	paths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(paths.AttachmentsDir, "diagram.png"), []byte("new image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	if mock.LastAttachmentID != "att-1" || strings.HasSuffix(mock.LastUploadedFile, "metadata.json") {
+		t.Fatalf("attachment id=%q uploaded file=%q", mock.LastAttachmentID, mock.LastUploadedFile)
+	}
+	updated, _ := content.LoadArtifactMetadata(file)
+	wantDigest := sha256.Sum256([]byte("new image"))
+	if updated.Attachments[0].SHA256 != hex.EncodeToString(wantDigest[:]) {
+		t.Fatalf("attachment hash was not updated")
+	}
+}
+
+func TestPushEditableArtifactFailedUpdatePreservesMetadata(t *testing.T) {
+	file, metadata := writePushArtifact(t, "Body.\n", nil)
+	mock := artifactPushMock(metadata)
+	mock.FailUpdate = true
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err == nil {
+		t.Fatal("runPush unexpectedly succeeded")
+	}
+	unchanged, _ := content.LoadArtifactMetadata(file)
+	if unchanged.Page.BaseVersion != metadata.Page.BaseVersion {
+		t.Fatalf("metadata changed after failed update: %d", unchanged.Page.BaseVersion)
+	}
+}
+
+func writePushArtifact(t *testing.T, markdown string, attachments []content.AttachmentMetadata) (string, content.Metadata) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "page.md")
+	if err := os.WriteFile(file, []byte(markdown), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadata := content.Metadata{
+		SchemaVersion:      content.SchemaVersion,
+		Page:               content.PageMetadata{ID: "page-123", SpaceKey: "DOCS", Title: "Page", BaseVersion: 7},
+		PreservedFragments: map[string]string{}, Attachments: attachments,
+	}
+	if err := content.SaveArtifactMetadata(file, metadata); err != nil {
+		t.Fatal(err)
+	}
+	return file, metadata
+}
+
+func artifactPushMock(metadata content.Metadata) *confluence.MockClient {
+	mock := confluence.NewMockClient()
+	page := &confluence.Page{ID: metadata.Page.ID, Title: metadata.Page.Title}
+	page.Version.Number = metadata.Page.BaseVersion
+	mock.Pages[page.ID] = page
+	return mock
+}
+
+func configurePushTest(t *testing.T, file string, mock *confluence.MockClient) {
+	t.Helper()
+	resetPushFlags()
+	t.Cleanup(resetPushFlags)
+	configFile = writePushTempConfig(t)
+	verbose = false
+	pushFile = file
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient { return mock }
 }
 
 func TestPushProjectSelectionInfersSpace(t *testing.T) {

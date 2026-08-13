@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 )
 
 // MockClient is an in-memory implementation of ConfluenceClient for tests.
@@ -19,7 +20,10 @@ type MockClient struct {
 	CreateCalls      []string                // titles created (for assertions)
 	UpdateCalls      []string                // titles updated
 	LastUploadedFile string
+	LastAttachmentID string
 	FailFindByTitle  bool
+	FailUpdate       bool
+	ExpectedVersions []int
 }
 
 func NewMockClient() *MockClient {
@@ -38,6 +42,7 @@ func (m *MockClient) key(spaceKey, title string) string { return spaceKey + ":" 
 
 func (m *MockClient) CreatePage(spaceKey, title, content string) (*Page, error) {
 	p := &Page{ID: title + "-id", Title: title}
+	p.Version.Number = 1
 	p.Body.Storage.Value = content
 	m.Pages[p.ID] = p
 	m.PagesByTitle[m.key(spaceKey, title)] = p
@@ -50,9 +55,25 @@ func (m *MockClient) CreatePageWithParent(spaceKey, title, content, parentID str
 }
 
 func (m *MockClient) UpdatePage(pageID, title, content string) (*Page, error) {
+	p := m.Pages[pageID]
+	if p == nil {
+		return nil, nil
+	}
+	return m.UpdatePageAtVersion(pageID, title, content, p.Version.Number)
+}
+
+func (m *MockClient) UpdatePageAtVersion(pageID, title, content string, baseVersion int) (*Page, error) {
+	m.ExpectedVersions = append(m.ExpectedVersions, baseVersion)
+	if m.FailUpdate {
+		return nil, fmt.Errorf("configured update failure")
+	}
 	if p, ok := m.Pages[pageID]; ok {
+		if p.Version.Number != baseVersion {
+			return nil, fmt.Errorf("version conflict: current version is %d", p.Version.Number)
+		}
 		p.Title = title
 		p.Body.Storage.Value = content
+		p.Version.Number++
 		m.UpdateCalls = append(m.UpdateCalls, title)
 		return p, nil
 	}
@@ -74,6 +95,13 @@ func (m *MockClient) UploadAttachment(pageID, filePath string) (*Attachment, err
 	att := Attachment{ID: "att-" + filePath, Title: filePath}
 	m.Attachments[pageID] = append(m.Attachments[pageID], att)
 	m.LastUploadedFile = filePath
+	return &att, nil
+}
+
+func (m *MockClient) UploadAttachmentVersion(pageID, attachmentID, filePath string) (*Attachment, error) {
+	m.LastAttachmentID = attachmentID
+	m.LastUploadedFile = filePath
+	att := Attachment{ID: attachmentID, Title: filepath.Base(filePath)}
 	return &att, nil
 }
 

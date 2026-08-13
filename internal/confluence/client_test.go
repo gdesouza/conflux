@@ -311,6 +311,33 @@ func TestUpdatePage(t *testing.T) {
 	}
 }
 
+func TestUpdatePageAtVersionUsesExpectedVersionWithoutRefetch(t *testing.T) {
+	client, mockTransport := createTestClient()
+	updatedPage := Page{ID: "123456", Title: "Updated Page"}
+	updatedPage.Version.Number = 8
+	mockTransport.addResponse("PUT", "/wiki/rest/api/content/123456", http.StatusOK, updatedPage)
+
+	page, err := client.UpdatePageAtVersion("123456", "Updated Page", "<p>Updated content</p>", 7)
+	if err != nil {
+		t.Fatalf("UpdatePageAtVersion returned error: %v", err)
+	}
+	if page.Version.Number != 8 || mockTransport.getRequestCount() != 1 {
+		t.Fatalf("page version=%d requests=%d, want version 8 and one request", page.Version.Number, mockTransport.getRequestCount())
+	}
+	request := mockTransport.getLastRequest()
+	var payload struct {
+		Version struct {
+			Number int `json:"number"`
+		} `json:"version"`
+	}
+	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode update request: %v", err)
+	}
+	if payload.Version.Number != 8 {
+		t.Fatalf("request version = %d, want 8", payload.Version.Number)
+	}
+}
+
 func TestUpdatePageForbidden(t *testing.T) {
 	client, mockTransport := createTestClient()
 
