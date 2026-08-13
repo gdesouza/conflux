@@ -21,7 +21,15 @@ type pushTestClient struct {
 	failGet          bool
 	failUpdate       bool
 	failUpload       bool
+	failList         bool
 	invalidUpdate    bool
+}
+
+func (m *pushTestClient) ListAttachments(pageID string) ([]confluence.Attachment, error) {
+	if m.failList {
+		return nil, fmt.Errorf("configured list failure")
+	}
+	return m.MockClient.ListAttachments(pageID)
 }
 
 func (m *pushTestClient) GetPage(pageID string) (*confluence.Page, error) {
@@ -217,6 +225,26 @@ func TestPushEditableArtifactFailedUpdatePreservesMetadata(t *testing.T) {
 	}
 }
 
+func TestPushEditableArtifactConflictDoesNotMutateAttachments(t *testing.T) {
+	oldDigest := sha256.Sum256([]byte("old"))
+	attachment := content.AttachmentMetadata{ID: "att-1", Filename: "diagram.png", MediaType: "image/png", SHA256: hex.EncodeToString(oldDigest[:])}
+	file, metadata := writePushArtifact(t, "![diagram](page.attachments/diagram.png)\n", []content.AttachmentMetadata{attachment})
+	paths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(paths.AttachmentsDir, "diagram.png"), []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	mock.failUpdate = true
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err == nil {
+		t.Fatal("runPush unexpectedly succeeded")
+	}
+	if mock.LastUploadedFile != "" || mock.lastAttachmentID != "" {
+		t.Fatalf("attachment mutated before guarded update: file=%q id=%q", mock.LastUploadedFile, mock.lastAttachmentID)
+	}
+}
+
 func TestPushEditableArtifactRejectsSpaceMismatch(t *testing.T) {
 	file, metadata := writePushArtifact(t, "Body.\n", nil)
 	mock := artifactPushMock(metadata)
@@ -294,6 +322,44 @@ func TestPushEditableArtifactCreatesNewAttachment(t *testing.T) {
 	}
 }
 
+func TestPushEditableArtifactVersionsConcurrentSameNameAttachment(t *testing.T) {
+	file, metadata := writePushArtifact(t, "[runbook](page.attachments/runbook.pdf)\n", nil)
+	paths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(paths.AttachmentsDir, "runbook.pdf"), []byte("local pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	mock.Attachments[metadata.Page.ID] = []confluence.Attachment{{ID: "remote-att", Title: "runbook.pdf"}}
+	configurePushTest(t, file, mock)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error: %v", err)
+	}
+	if mock.lastAttachmentID != "remote-att" {
+		t.Fatalf("versioned attachment ID = %q, want remote-att", mock.lastAttachmentID)
+	}
+	updated, _ := content.LoadArtifactMetadata(file)
+	if updated.Attachments[0].ID != "remote-att" {
+		t.Fatalf("metadata attachment = %#v", updated.Attachments[0])
+	}
+}
+
+func TestPushEditableArtifactStopsBeforeUpdateWhenAttachmentLookupFails(t *testing.T) {
+	file, metadata := writePushArtifact(t, "[runbook](page.attachments/runbook.pdf)\n", nil)
+	paths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(paths.AttachmentsDir, "runbook.pdf"), []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	mock.failList = true
+	configurePushTest(t, file, mock)
+
+	err := runPush(pushCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "list current page attachments") || len(mock.expectedVersions) != 0 {
+		t.Fatalf("error=%v expected versions=%v", err, mock.expectedVersions)
+	}
+}
+
 func TestPushEditableArtifactPreservesMetadataOnRemoteFailures(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -316,7 +382,11 @@ func TestPushEditableArtifactPreservesMetadataOnRemoteFailures(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 			unchanged, _ := content.LoadArtifactMetadata(file)
-			if unchanged.Page.BaseVersion != 7 || len(unchanged.Attachments) != 0 {
+			wantVersion := 7
+			if test.name == "upload" {
+				wantVersion = 8
+			}
+			if unchanged.Page.BaseVersion != wantVersion || len(unchanged.Attachments) != 0 {
 				t.Fatalf("metadata changed after failure: %#v", unchanged)
 			}
 		})

@@ -56,7 +56,7 @@ func (m *MockClient) UpdatePage(pageID, title, content string) (*Page, error) {
 		m.UpdateCalls = append(m.UpdateCalls, title)
 		return p, nil
 	}
-	return nil, nil
+	return nil, fmt.Errorf("page %s not found", pageID)
 }
 
 func (m *MockClient) FindPageByTitle(spaceKey, title string) (*Page, error) {

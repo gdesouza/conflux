@@ -195,6 +195,7 @@ type artifactPushClient interface {
 	UpdatePageAtVersion(pageID, title, content string, baseVersion int) (*confluence.Page, error)
 	UploadAttachment(pageID, filePath string) (*confluence.Attachment, error)
 	UploadAttachmentVersion(pageID, attachmentID, filePath string) (*confluence.Attachment, error)
+	ListAttachments(pageID string) ([]confluence.Attachment, error)
 }
 
 func pushEditableArtifact(client confluence.ConfluenceClient, markdownPath string, metadata artifactcontent.Metadata, force bool) error {
@@ -234,21 +235,9 @@ func pushEditableArtifact(client confluence.ConfluenceClient, markdownPath strin
 		updateBase = remote.Version.Number
 	}
 
-	updatedMetadata := metadata
-	for _, upload := range rendered.Uploads {
-		path := attachmentPaths[strings.ToLower(upload.Filename)]
-		attachmentID := attachmentIDFor(metadata, upload.Filename)
-		var attachment *confluence.Attachment
-		var uploadErr error
-		if attachmentID == "" {
-			attachment, uploadErr = pusher.UploadAttachment(rendered.PageID, path)
-		} else {
-			attachment, uploadErr = pusher.UploadAttachmentVersion(rendered.PageID, attachmentID, path)
-		}
-		if uploadErr != nil {
-			return fmt.Errorf("upload attachment %q: %w", upload.Filename, uploadErr)
-		}
-		mergeAttachmentMetadata(&updatedMetadata, upload, attachment)
+	remoteAttachmentIDs, err := resolveRemoteAttachmentIDs(pusher, rendered.PageID, metadata, rendered.Uploads)
+	if err != nil {
+		return err
 	}
 	page, err := pusher.UpdatePageAtVersion(rendered.PageID, rendered.Title, rendered.Storage, updateBase)
 	if err != nil {
@@ -257,12 +246,58 @@ func pushEditableArtifact(client confluence.ConfluenceClient, markdownPath strin
 	if page == nil || page.Version.Number < 1 {
 		return fmt.Errorf("update page returned no valid version")
 	}
+
+	updatedMetadata := metadata
 	updatedMetadata.Page.BaseVersion = page.Version.Number
+	for _, upload := range rendered.Uploads {
+		path := attachmentPaths[strings.ToLower(upload.Filename)]
+		attachmentID := remoteAttachmentIDs[strings.ToLower(upload.Filename)]
+		var attachment *confluence.Attachment
+		var uploadErr error
+		if attachmentID == "" {
+			attachment, uploadErr = pusher.UploadAttachment(rendered.PageID, path)
+		} else {
+			attachment, uploadErr = pusher.UploadAttachmentVersion(rendered.PageID, attachmentID, path)
+		}
+		if uploadErr != nil {
+			if saveErr := artifactcontent.SaveArtifactMetadata(markdownPath, updatedMetadata); saveErr != nil {
+				return fmt.Errorf("upload attachment %q: %v; preserve updated page version in metadata: %w", upload.Filename, uploadErr, saveErr)
+			}
+			return fmt.Errorf("upload attachment %q: %w", upload.Filename, uploadErr)
+		}
+		mergeAttachmentMetadata(&updatedMetadata, upload, attachment)
+	}
 	if err := artifactcontent.SaveArtifactMetadata(markdownPath, updatedMetadata); err != nil {
 		return fmt.Errorf("save updated artifact metadata: %w", err)
 	}
 	fmt.Printf("Updated page '%s' (ID: %s) in space '%s'\n", page.Title, page.ID, rendered.SpaceKey)
 	return nil
+}
+
+func resolveRemoteAttachmentIDs(client artifactPushClient, pageID string, metadata artifactcontent.Metadata, uploads []artifactcontent.AttachmentUpload) (map[string]string, error) {
+	ids := make(map[string]string, len(uploads))
+	needsRemoteLookup := false
+	for _, upload := range uploads {
+		key := strings.ToLower(upload.Filename)
+		ids[key] = attachmentIDFor(metadata, upload.Filename)
+		if ids[key] == "" {
+			needsRemoteLookup = true
+		}
+	}
+	if !needsRemoteLookup {
+		return ids, nil
+	}
+	attachments, err := client.ListAttachments(pageID)
+	if err != nil {
+		return nil, fmt.Errorf("list current page attachments: %w", err)
+	}
+	for _, attachment := range attachments {
+		key := strings.ToLower(attachment.Title)
+		if _, requested := ids[key]; requested && ids[key] == "" {
+			ids[key] = attachment.ID
+		}
+	}
+	return ids, nil
 }
 
 func attachmentIDFor(metadata artifactcontent.Metadata, filename string) string {
@@ -285,7 +320,11 @@ func readLocalAttachments(directory string) ([]artifactcontent.LocalAttachment, 
 		if entry.Name() == "metadata.json" {
 			continue
 		}
-		if !entry.Type().IsRegular() {
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil, nil, fmt.Errorf("inspect attachment %q: %w", entry.Name(), infoErr)
+		}
+		if !info.Mode().IsRegular() {
 			return nil, nil, fmt.Errorf("attachment %q is not a regular file", entry.Name())
 		}
 		path := filepath.Join(directory, entry.Name())
