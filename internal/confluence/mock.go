@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ type MockClient struct {
 	Ancestors        map[string][]PageInfo   // pageID -> ancestors chain
 	SpaceHierarchies map[string][]PageInfo   // spaceKey -> root pages (fully nested)
 	Attachments      map[string][]Attachment // pageID -> attachments
+	AttachmentBodies map[string][]byte       // attachmentID -> downloaded body
 	CreateCalls      []string                // titles created (for assertions)
 	UpdateCalls      []string                // titles updated
 	LastUploadedFile string
@@ -28,6 +30,7 @@ func NewMockClient() *MockClient {
 		Ancestors:        make(map[string][]PageInfo),
 		SpaceHierarchies: make(map[string][]PageInfo),
 		Attachments:      make(map[string][]Attachment),
+		AttachmentBodies: make(map[string][]byte),
 	}
 }
 
@@ -111,7 +114,14 @@ func (m *MockClient) GetAttachmentDownloadURL(pageID, attachmentID string) (stri
 }
 
 func (m *MockClient) DownloadAttachment(ctx context.Context, pageID, attachmentID string) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("attachment download not configured for page %s attachment %s", pageID, attachmentID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	body, ok := m.AttachmentBodies[attachmentID]
+	if !ok {
+		return nil, fmt.Errorf("attachment download not configured for page %s attachment %s", pageID, attachmentID)
+	}
+	return io.NopCloser(bytes.NewReader(body)), nil
 }
 
 var _ ConfluenceClient = (*MockClient)(nil)
