@@ -130,7 +130,8 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 		}
 	}
 
-	for _, line := range lines {
+	for lineIndex := 0; lineIndex < len(lines); lineIndex++ {
+		line := lines[lineIndex]
 		trimmed := strings.TrimSpace(line)
 		fence, fenceLength := fenceMarker(trimmed)
 		if (!inCode && fence != 0) || (inCode && fence == codeFence && fenceLength >= codeFenceLength) {
@@ -163,6 +164,26 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 			closeList()
 			storage.WriteString(fragments[marker[1]])
 			continue
+		}
+		if rendered, ok := jiraStorage(trimmed); ok {
+			closeParagraph()
+			closeList()
+			storage.WriteString(rendered)
+			continue
+		}
+		if directive := tableDirectivePattern.FindStringSubmatch(trimmed); directive != nil {
+			closeParagraph()
+			closeList()
+			table, lastLine, err := markdownTableToStorage(lines, lineIndex+1, directive[1], directive[2], &references)
+			if err != nil {
+				return "", nil, err
+			}
+			storage.WriteString(table)
+			lineIndex = lastLine
+			continue
+		}
+		if tableDirectiveCandidate.MatchString(trimmed) {
+			return "", nil, fmt.Errorf("invalid Conflux table directive %q", trimmed)
 		}
 		if match := headingLine.FindStringSubmatch(line); match != nil {
 			closeParagraph()
