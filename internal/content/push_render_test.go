@@ -84,11 +84,19 @@ func TestRenderArtifactRejectsDeletedAndCorruptMarkers(t *testing.T) {
 	}
 }
 
+func TestRenderArtifactAddsValidationContext(t *testing.T) {
+	metadata := pushMetadata()
+	_, err := RenderArtifact(`<!-- conflux:preserved id='fragment-0001' -->`, metadata, nil)
+	if err == nil || !strings.Contains(err.Error(), "validate push artifact") {
+		t.Fatalf("error = %v, want validation context", err)
+	}
+}
+
 func TestRenderArtifactRejectsInlinePreservationMarker(t *testing.T) {
 	metadata := pushMetadata()
 	markdown := `Before <!-- conflux:preserved id="fragment-0001" --> after`
 	_, err := RenderArtifact(markdown, metadata, nil)
-	if err == nil || !strings.Contains(err.Error(), "own line") {
+	if err == nil || !strings.Contains(err.Error(), "validate preservation marker placement") || !strings.Contains(err.Error(), "own line") {
 		t.Fatalf("error = %v, want standalone marker error", err)
 	}
 }
@@ -143,6 +151,44 @@ func TestRenderArtifactProtectsFormattingSyntaxInsideCodeAndURLs(t *testing.T) {
 		if !strings.Contains(artifact.Storage, expected) {
 			t.Fatalf("storage does not contain %q: %s", expected, artifact.Storage)
 		}
+	}
+}
+
+func TestRenderArtifactDoesNotReplaceUserPlaceholderText(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "CONFLUXPROTECTED0Z and [guide](https://example.com).\n"
+	artifact, err := RenderArtifact(markdown, metadata, nil)
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	if !strings.Contains(artifact.Storage, "CONFLUXPROTECTED0Z") || strings.Count(artifact.Storage, `<a href=`) != 1 {
+		t.Fatalf("user placeholder text was corrupted: %s", artifact.Storage)
+	}
+}
+
+func TestRenderArtifactAcceptsLegacyAttachmentDirectory(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	artifact, err := RenderArtifact("![diagram](attachments/diagram.png)\n", metadata, []LocalAttachment{{Filename: "diagram.png", Content: []byte("image")}})
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	if !strings.Contains(artifact.Storage, `ri:filename="diagram.png"`) || len(artifact.Uploads) != 1 {
+		t.Fatalf("legacy attachment was not rendered: %#v %s", artifact.Uploads, artifact.Storage)
+	}
+}
+
+func TestRenderArtifactSupportsTildeCodeFence(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "~~~markdown\n<!-- conflux:preserved id=\"fragment-0001\" -->\n~~~\n"
+	artifact, err := RenderArtifact(markdown, metadata, nil)
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	if !strings.Contains(artifact.Storage, `ac:name="language">markdown`) || !strings.Contains(artifact.Storage, `<!-- conflux:preserved`) {
+		t.Fatalf("tilde fence was not rendered as code: %s", artifact.Storage)
 	}
 }
 

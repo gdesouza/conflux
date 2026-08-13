@@ -50,13 +50,13 @@ var (
 func RenderArtifact(markdown string, metadata Metadata, localAttachments []LocalAttachment) (PushArtifact, error) {
 	validation, err := ValidateArtifact(markdown, &metadata)
 	if err != nil {
-		return PushArtifact{}, err
+		return PushArtifact{}, fmt.Errorf("validate push artifact: %w", err)
 	}
 	if len(validation.Warnings) > 0 {
 		return PushArtifact{}, fmt.Errorf("artifact would discard preserved content: %s", strings.Join(validation.Warnings, "; "))
 	}
 	if err := validateStandaloneMarkers(markdown); err != nil {
-		return PushArtifact{}, err
+		return PushArtifact{}, fmt.Errorf("validate preservation marker placement: %w", err)
 	}
 
 	files := make(map[string]LocalAttachment, len(localAttachments))
@@ -73,7 +73,7 @@ func RenderArtifact(markdown string, metadata Metadata, localAttachments []Local
 
 	storage, references, err := markdownToStorage(markdown, metadata.PreservedFragments)
 	if err != nil {
-		return PushArtifact{}, err
+		return PushArtifact{}, fmt.Errorf("render artifact Markdown: %w", err)
 	}
 	remote := make(map[string]AttachmentMetadata, len(metadata.Attachments))
 	for _, attachment := range metadata.Attachments {
@@ -111,6 +111,8 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 	var codeLanguage string
 	var codeLines []string
 	inCode := false
+	var codeFence byte
+	var codeFenceLength int
 
 	closeParagraph := func() {
 		if len(paragraph) == 0 {
@@ -130,12 +132,15 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
+		fence, fenceLength := fenceMarker(trimmed)
+		if (!inCode && fence != 0) || (inCode && fence == codeFence && fenceLength >= codeFenceLength) {
 			closeParagraph()
 			closeList()
 			if !inCode {
 				inCode = true
-				codeLanguage = strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+				codeFence = fence
+				codeFenceLength = fenceLength
+				codeLanguage = strings.TrimSpace(trimmed[fenceLength:])
 				codeLines = nil
 			} else {
 				storage.WriteString(`<ac:structured-macro ac:name="code" ac:schema-version="1">`)
@@ -144,6 +149,8 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 				}
 				storage.WriteString(`<ac:plain-text-body><![CDATA[` + escapeCDATA(strings.Join(codeLines, "\n")) + `]]></ac:plain-text-body></ac:structured-macro>`)
 				inCode = false
+				codeFence = 0
+				codeFenceLength = 0
 			}
 			continue
 		}
@@ -209,10 +216,17 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 func convertInline(value string, references *[]string) string {
 	escaped := html.EscapeString(value)
 	var protected []string
+	placeholderPrefix := "CONFLUXPROTECTED"
+	for strings.Contains(escaped, placeholderPrefix) {
+		placeholderPrefix += "X"
+	}
+	placeholder := func(index int) string {
+		return fmt.Sprintf("%s%dZ", placeholderPrefix, index)
+	}
 	protect := func(rendered string) string {
-		placeholder := fmt.Sprintf("CONFLUXTOKEN%06dX", len(protected))
+		token := placeholder(len(protected))
 		protected = append(protected, rendered)
-		return placeholder
+		return token
 	}
 	escaped = imageLink.ReplaceAllStringFunc(escaped, func(match string) string {
 		parts := imageLink.FindStringSubmatch(match)
@@ -237,7 +251,7 @@ func convertInline(value string, references *[]string) string {
 	})
 	escaped = formatEmphasis(escaped)
 	for i, rendered := range protected {
-		escaped = strings.ReplaceAll(escaped, fmt.Sprintf("CONFLUXTOKEN%06dX", i), rendered)
+		escaped = strings.ReplaceAll(escaped, placeholder(i), rendered)
 	}
 	return escaped
 }
@@ -269,7 +283,7 @@ func attachmentFilename(target string) string {
 		return ""
 	}
 	clean := filepath.ToSlash(filepath.Clean(decoded))
-	if !strings.Contains(clean, ".attachments/") {
+	if !strings.HasPrefix(clean, "attachments/") && !strings.Contains(clean, ".attachments/") {
 		return ""
 	}
 	return filepath.Base(clean)
