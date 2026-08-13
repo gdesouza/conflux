@@ -23,6 +23,8 @@ var (
 	pullIDOrTitle string
 	pullFormat    string
 	pullProject   string
+	pullOutput    string
+	pullForce     bool
 )
 
 type attachmentDownloader interface {
@@ -101,6 +103,18 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	if page == nil {
 		return fmt.Errorf("page '%s' not found in space '%s'", pullIDOrTitle, pullSpace)
+	}
+	if pullOutput != "" {
+		if page.Version.Number < 1 {
+			page, err = client.GetPage(page.ID)
+			if err != nil {
+				return fmt.Errorf("refresh page for editable artifact: %w", err)
+			}
+			if page == nil {
+				return fmt.Errorf("page '%s' disappeared while preparing editable artifact", pullIDOrTitle)
+			}
+		}
+		return pullEditableArtifact(cmd.Context(), cmd.OutOrStdout(), client, page, pullSpace, pullOutput, pullForce)
 	}
 
 	// Print header then the requested format
@@ -326,6 +340,8 @@ func init() {
 	pullCmd.Flags().StringVarP(&pullIDOrTitle, "page", "p", "", "Page title or ID to fetch (required)")
 	pullCmd.Flags().StringVarP(&pullFormat, "format", "f", "storage", "Output format: storage|html|markdown")
 	pullCmd.Flags().StringVarP(&pullProject, "project", "P", "", "Project name defined in config to infer space")
+	pullCmd.Flags().StringVarP(&pullOutput, "output", "o", "", "Write an editable page artifact to this .md file")
+	pullCmd.Flags().BoolVar(&pullForce, "force", false, "Replace an existing output artifact")
 
 	if err := pullCmd.MarkFlagRequired("page"); err != nil {
 		panic(fmt.Sprintf("Failed to mark page flag as required: %v", err))

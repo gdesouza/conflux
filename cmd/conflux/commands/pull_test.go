@@ -2,9 +2,11 @@ package commands
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"conflux/internal/confluence"
+	"conflux/internal/content"
 	"conflux/pkg/logger"
 )
 
@@ -41,6 +43,8 @@ func resetPullFlags() {
 	pullIDOrTitle = ""
 	pullFormat = ""
 	pullProject = ""
+	pullOutput = ""
+	pullForce = false
 }
 
 // --- runPull tests ---
@@ -188,6 +192,36 @@ func TestRunPull_PageLookupByTitle(t *testing.T) {
 	err := runPull(pullCmd, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunPull_EditableArtifactRefreshesTitleResult(t *testing.T) {
+	resetPullFlags()
+	configFile = writePullTempConfig(t)
+	verbose = false
+	pullSpace = "DOCS"
+	pullIDOrTitle = "My Page Title"
+	pullOutput = filepath.Join(t.TempDir(), "page.md")
+
+	mock := confluence.NewMockClient()
+	mock.PagesByTitle["DOCS:My Page Title"] = &confluence.Page{ID: "999", Title: "My Page Title"}
+	page := &confluence.Page{ID: "999", Title: "My Page Title"}
+	page.Version.Number = 4
+	page.Body.Storage.Value = "<p>editable content</p>"
+	mock.Pages[page.ID] = page
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient {
+		return mock
+	}
+
+	if err := runPull(pullCmd, nil); err != nil {
+		t.Fatalf("runPull returned error: %v", err)
+	}
+	metadata, err := content.LoadArtifactMetadata(pullOutput)
+	if err != nil {
+		t.Fatalf("load artifact metadata: %v", err)
+	}
+	if metadata.Page.BaseVersion != 4 {
+		t.Fatalf("base version = %d, want 4", metadata.Page.BaseVersion)
 	}
 }
 
