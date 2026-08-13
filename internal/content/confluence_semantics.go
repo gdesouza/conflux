@@ -161,7 +161,11 @@ func markdownTableToStorage(lines []string, start int, layout, widthValue string
 	}
 	width := 0
 	if widthValue != "" {
-		width, _ = strconv.Atoi(widthValue)
+		var err error
+		width, err = strconv.Atoi(widthValue)
+		if err != nil {
+			return "", start, fmt.Errorf("invalid table width %q: %w", widthValue, err)
+		}
 		if width < 1 {
 			return "", start, fmt.Errorf("table width must be positive")
 		}
@@ -184,7 +188,7 @@ func markdownTableToStorage(lines []string, start int, layout, widthValue string
 			break
 		}
 		if len(cells) != len(header) {
-			return "", index, fmt.Errorf("table row %d has %d cells; expected %d", index-start, len(cells), len(header))
+			return "", index, fmt.Errorf("table data row %d has %d cells; expected %d", index-start-1, len(cells), len(header))
 		}
 		storage.WriteString("<tr>")
 		for _, cell := range cells {
@@ -199,15 +203,36 @@ func markdownTableToStorage(lines []string, start int, layout, widthValue string
 
 func splitTableRow(line string) []string {
 	trimmed := strings.TrimSpace(line)
-	if !strings.Contains(trimmed, "|") {
+	if len(trimmed) < 2 || trimmed[0] != '|' || trimmed[len(trimmed)-1] != '|' {
 		return nil
 	}
-	trimmed = strings.TrimPrefix(strings.TrimSuffix(trimmed, "|"), "|")
-	parts := strings.Split(trimmed, "|")
-	result := make([]string, len(parts))
-	for index, part := range parts {
-		result[index] = strings.TrimSpace(part)
+	var result []string
+	var cell strings.Builder
+	escaped := false
+	for _, character := range trimmed[1 : len(trimmed)-1] {
+		if escaped {
+			if character != '|' && character != '\\' {
+				cell.WriteByte('\\')
+			}
+			cell.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character == '|' {
+			result = append(result, strings.TrimSpace(cell.String()))
+			cell.Reset()
+			continue
+		}
+		cell.WriteRune(character)
 	}
+	if escaped {
+		cell.WriteByte('\\')
+	}
+	result = append(result, strings.TrimSpace(cell.String()))
 	return result
 }
 

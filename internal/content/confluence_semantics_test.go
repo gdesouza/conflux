@@ -81,3 +81,54 @@ func TestRenderArtifactRejectsDetachedOrMalformedTableDirective(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderArtifactRoundTripsEscapedTablePipe(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "<!-- conflux:table layout=\"center\" -->\n| Value | Status |\n| --- | --- |\n| A \\| B | Ready |\n"
+	artifact, err := RenderArtifact(markdown, metadata, nil)
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	if !strings.Contains(artifact.Storage, "<td><p>A | B</p></td>") {
+		t.Fatalf("escaped pipe was not retained in one cell: %s", artifact.Storage)
+	}
+}
+
+func TestRenderArtifactStopsTableBeforePipeParagraph(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "<!-- conflux:table layout=\"center\" -->\n| A | B |\n| --- | --- |\n| one | two |\nA | following paragraph\n"
+	artifact, err := RenderArtifact(markdown, metadata, nil)
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	if !strings.Contains(artifact.Storage, "</table><p>A | following paragraph</p>") {
+		t.Fatalf("following paragraph was absorbed by table: %s", artifact.Storage)
+	}
+}
+
+func TestRenderArtifactReportsDataRowNumber(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "<!-- conflux:table layout=\"center\" -->\n| A | B |\n| --- | --- |\n| only one |\n"
+	_, err := RenderArtifact(markdown, metadata, nil)
+	if err == nil || !strings.Contains(err.Error(), "table data row 1") {
+		t.Fatalf("error = %v, want first data row", err)
+	}
+}
+
+func TestMarkdownTableRejectsOverflowingWidth(t *testing.T) {
+	lines := []string{"| A |", "| --- |"}
+	_, _, err := markdownTableToStorage(lines, 0, "center", "999999999999999999999999999999", nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid table width") {
+		t.Fatalf("error = %v, want invalid width", err)
+	}
+}
+
+func TestSplitTableRowPreservesEscapes(t *testing.T) {
+	cells := splitTableRow(`| C:\\temp | A \| B |`)
+	if len(cells) != 2 || cells[0] != `C:\temp` || cells[1] != "A | B" {
+		t.Fatalf("cells = %#v", cells)
+	}
+}
