@@ -4,11 +4,15 @@
 [![Build Status](https://gdesouza.semaphoreci.com/badges/conflux/branches/main.svg?style=shields&key=fc860726-2edb-49bb-b2b6-d7ed8466a9d8)](https://gdesouza/semaphoreci.com/projects/conflux)
 [![codecov](https://codecov.io/github/gdesouza/conflux/graph/badge.svg?token=T0UIB07O7R)](https://codecov.io/github/gdesouza/conflux)
 
-A command-line tool to synchronize local markdown files to Confluence spaces with Mermaid.js diagram support.
+A command-line tool for pulling, editing, and pushing Confluence pages as local Markdown artifacts. The legacy synchronization workflow remains available during its deprecation period.
 
 ## Features
 
-- **Sync markdown files to Confluence pages** - Convert and upload your local documentation
+- **Editable page artifacts** - Pull a page into paired Markdown, attachments, and metadata
+- **Loss-preserving conversion** - Keep unsupported Confluence content behind embedded preservation markers
+- **Pure content rendering** - Convert without network access and describe attachment work as intents
+- **Confluence-aware Markdown** - Preserve Jira inline previews and table layout settings
+- **Legacy synchronization** - Convert and upload documentation trees during the deprecation period
 - **Image attachment support** - Automatically upload and reference images from your markdown files
 - **Mermaid.js diagram support** - Automatically convert or preserve mermaid diagrams in your documentation
 - **Automatic directory page creation** - Creates organized parent pages with children macros for folder structures
@@ -350,6 +354,12 @@ conflux pages list -P core
 
 ### Pull Command
 ```bash
+# Pull an editable artifact (recommended for pull/edit/push workflows)
+conflux pull -s DOCS -p 123456789 --output ./deployment.md
+
+# Replace an existing paired artifact explicitly
+conflux pull -s DOCS -p 123456789 --output ./deployment.md --force
+
 # Fetch a page by numeric ID (storage format by default)
 conflux pull -s DOCS -p 123456789
 
@@ -365,6 +375,26 @@ conflux pull -s DOCS -p 123456789 -f html
 # Convert to Markdown
 conflux pull -s DOCS -p 123456789 -f markdown
 ```
+
+Using `--output` creates a paired artifact:
+
+```text
+deployment.md
+deployment.attachments/
+├── metadata.json
+├── diagram.png
+└── runbook.pdf
+```
+
+- `deployment.md` contains editable Markdown and preservation markers.
+- `metadata.json` records the page identity, base version, opaque fragments, and attachment hashes.
+- Only attachments referenced by the rendered page are downloaded.
+- Pull stages the complete artifact before replacing the destination, so a failed download does not leave a partially valid artifact.
+- Existing Markdown or its matching attachments directory is not replaced unless `--force` is supplied.
+- `metadata.json` is control data and must not be uploaded as a page attachment.
+
+The format options below are stdout export modes and are separate from the editable `--output` workflow.
+
 Supported formats:
 - storage (default) – raw Confluence storage format XML/HTML
 - html – rendered page HTML (falls back to storage if view not available)
@@ -395,6 +425,44 @@ Behavior:
 
 Current limitations:
 - The `push` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
+- Artifact-aware push orchestration—including remote version conflict checks and metadata updates—is not connected to the CLI yet. Until that phase lands, do not expect `conflux push` to consume `metadata.json` or preservation markers safely.
+
+### Editable Artifact Markdown
+
+#### Preserved Confluence content
+
+Confluence elements that are not editable in Markdown are represented at their original position:
+
+```markdown
+<!-- conflux:preserved id="fragment-0001" -->
+```
+
+The matching raw storage fragment lives in `metadata.json`. Do not edit, duplicate, or delete these markers. Validation fails rather than silently dropping preserved content. Markers shown inside inline or fenced code are treated as examples, not active markers.
+
+#### Jira inline previews
+
+An editable Jira inline macro uses this syntax:
+
+```markdown
+[PSS-3369](jira:PSS-3369){conflux-display=inline jira-server="System Jira" jira-server-id="4a67abd8-f396-3524-919a-398ffb606bf7"}
+```
+
+The Jira key may be edited, but the server name and ID should normally be retained from the pulled page. This syntax maps to Confluence's Jira macro. Ordinary URL links remain standard Markdown links. Card and embed appearances are deferred until representative storage fixtures are available; Conflux does not guess undocumented storage markup.
+
+#### Table layout and width
+
+Place a table directive immediately before its Markdown table:
+
+```markdown
+<!-- conflux:table layout="center" width="1347" -->
+| Epic | Ticket |
+| --- | --- |
+| PSS-3369 | PSS-3520 |
+```
+
+Supported layouts are `default`, `center`, `wide`, and `full-width`. Width is an optional positive integer matching Confluence's `data-table-width`. The directive must be immediately followed by a structurally valid table; malformed, detached, or inconsistent tables fail explicitly.
+
+Container width is separate from table width. For example, Confluence expand macros can carry `data-layout="wide"` and `breakoutWidth`; these containers remain opaque preserved fragments for now.
 
 Flags:
 - `-f, --file` (required) – Path to a single markdown file.
@@ -517,6 +585,8 @@ Notes:
 - `-P, --project` - Project name to infer space
 - `-p, --page` - Page ID or title (required)
 - `-f, --format` - Output format: `storage` (default), `html`, or `markdown`
+- `-o, --output` - Write a paired editable artifact to a `.md` file
+- `--force` - Replace an existing Markdown file and matching attachments directory
 
 **Pages List Command Flags:**
 - `-s, --space` - Confluence space key (optional if `--project` supplied)

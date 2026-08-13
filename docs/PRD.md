@@ -4,13 +4,13 @@
 
 **Product Name:** Conflux  
 **Version:** 1.1.0+  
-**Product Type:** Command-line documentation synchronization tool  
+**Product Type:** Command-line Confluence page editing tool
 
-Conflux is a specialized CLI tool designed to bridge the gap between local markdown documentation and Confluence knowledge management systems. It automatically converts, uploads, and maintains hierarchical documentation structures while preserving the natural organization of local file systems.
+Conflux is a CLI for loss-preserving Confluence page editing. Its primary workflow pulls one page into Markdown plus paired metadata and attachments, permits focused local edits, and pushes the artifact back without silently discarding unsupported Confluence content. Tree synchronization is legacy functionality scheduled for deprecation and removal.
 
 ## Product Vision
 
-Enable development teams to maintain their documentation in familiar markdown format locally while automatically keeping their Confluence spaces up-to-date with proper hierarchical organization and cross-references.
+Enable teams to edit specific parts of Confluence pages using familiar Markdown while preserving page meaning, unsupported native content, attachment identity, and concurrent-edit safety.
 
 ## Target Users
 
@@ -26,13 +26,14 @@ Enable development teams to maintain their documentation in familiar markdown fo
 
 ## Core Functionality
 
-### 1. Document Synchronization Engine
+### 1. Page Artifact Workflow
 
 **Primary Features:**
-- **Markdown to Confluence conversion**: Converts markdown files to Confluence Storage Format XML
-- **Bidirectional page management**: Creates new pages and updates existing ones
-- **Content versioning**: Handles Confluence page version management automatically
-- **Batch processing**: Processes multiple files efficiently with proper error handling
+- **Paired artifacts**: `<name>.md` plus `<name>.attachments/metadata.json` and referenced files
+- **Loss-preserving pull**: Unsupported storage nodes become opaque fragments referenced by embedded markers
+- **Deterministic rendering**: Conversion is pure and testable without Confluence credentials
+- **Attachment intents**: Renderers describe downloads and uploads without performing network operations
+- **Conflict-safe push target**: Existing-page artifacts carry a base version so remote edits can be rejected before mutation
 
 **Supported Markdown Elements:**
 - Headers (H1-H4)
@@ -40,6 +41,17 @@ Enable development teams to maintain their documentation in familiar markdown fo
 - Unordered and ordered lists  
 - Inline formatting (bold, italic, code)
 - Paragraphs with proper spacing
+- Links and attachment-backed images
+- Blockquotes and tables
+- Jira inline previews through explicit Conflux directives
+
+**Artifact Safety Rules:**
+- Preservation markers must resolve uniquely to metadata fragments.
+- Unsupported metadata schema versions fail explicitly.
+- Attachment paths cannot escape the paired attachments directory.
+- `metadata.json` is never uploaded as a Confluence attachment.
+- Remote attachments are never deleted implicitly.
+- A stale page version must be rejected unless the user explicitly overrides it.
 
 ### 2. Hierarchical Organization System
 
@@ -58,8 +70,12 @@ Enable development teams to maintain their documentation in familiar markdown fo
 ### 3. CLI Interface & Commands
 
 **Core Commands:**
-- `sync` (default): Synchronize local markdown files to Confluence
-- `list-pages`: Display Confluence space hierarchy with visual formatting
+- `pull`: Export storage/HTML/Markdown to stdout or write an editable artifact with `--output`
+- `push`: Create/update a page; artifact-aware conflict-safe orchestration is the next integration phase
+- `pages`: List and inspect Confluence pages
+- `config`: Create and inspect configuration
+- `sync`: Legacy synchronization command, to be deprecated and removed
+- `projects`: Legacy profile-listing command; named profiles remain useful to page commands
 - `version`: Show detailed build and version information
 
 **Global Flags:**
@@ -146,17 +162,18 @@ local:
 - **Configuration Layer**: YAML-based configuration with validation
 - **Markdown Parser**: Custom parser with Confluence format conversion
 - **Confluence Client**: HTTP REST API client with authentication
+- **Content Module**: Pure storage-to-artifact and artifact-to-storage rendering, validation, markers, and attachment intents
 - **Sync Engine**: Hierarchical synchronization logic
 - **Logger**: Structured logging with multiple severity levels
 
-**Data Flow:**
-1. Configuration loading and validation
-2. Markdown file discovery and parsing  
-3. Directory structure analysis
-4. Confluence API connectivity verification
-5. Hierarchical page creation (directories first)
-6. Document synchronization with parent relationships
-7. Status reporting and error handling
+**Primary Data Flow:**
+1. Resolve immutable configuration and selected profile.
+2. Fetch page storage, version, and attachment metadata through the Confluence adapter.
+3. Render Markdown, metadata, preservation markers, and attachment download intents.
+4. Stage and atomically install the paired local artifact.
+5. Read and validate the edited artifact before any remote mutation.
+6. Render Confluence storage and attachment upload intents.
+7. Compare the remote page version, upload changed attachments, update the page, then atomically advance local metadata.
 
 ## Success Metrics
 
@@ -200,7 +217,9 @@ local:
 ## Future Enhancement Opportunities
 
 **Potential Features:**
-- Support for additional markdown elements (tables, images, links)
+- Editable representations for additional Confluence macros and layouts
+- Smart Link card and embed appearances after tenant storage fixtures are captured
+- Three-way merging after version conflicts
 - Webhook-based automatic synchronization
 - Multi-space synchronization support
 - Template-based page generation
