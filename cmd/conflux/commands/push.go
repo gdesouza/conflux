@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"conflux/internal/config"
 	"conflux/internal/confluence"
 	artifactcontent "conflux/internal/content"
 	"conflux/internal/markdown"
@@ -34,8 +33,9 @@ var pushCmd = &cobra.Command{
 Space resolution precedence:
   1. --space flag
   2. --project flag (project's space)
-  3. First project in config (implicit default, if space unset)
-  4. Top-level confluence.space_key (legacy single-project)
+  3. CONFLUX_SPACE_KEY environment variable
+  4. Top-level confluence.space_key
+  5. First project in config
 
 Parent resolution:
   - If --parent looks numeric it is treated as a page ID
@@ -70,37 +70,23 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	log := logger.New(verbose)
 
-	// Load relaxed config similar to list-pages (space can be provided by flags / project)
-	cfg, err := config.LoadForListPages(configFile)
+	resolutionSpace := pushSpace
+	if artifact && pushSpace == "" && pushProject == "" {
+		resolutionSpace = metadata.Page.SpaceKey
+	}
+	runtime, err := resolveRuntimeConfig(resolutionSpace, pushProject)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
-
-	// Project selection if provided
-	if pushProject != "" {
-		if err := cfg.SelectProject(pushProject); err != nil {
-			return fmt.Errorf("failed to select project: %w", err)
-		}
-		if pushSpace == "" {
-			pushSpace = cfg.Confluence.SpaceKey
-		}
-	} else if pushSpace == "" && cfg.Confluence.SpaceKey == "" && len(cfg.Projects) > 0 {
-		// Apply default project if nothing specified
-		cfg.ApplyDefaultProject()
-		pushSpace = cfg.Confluence.SpaceKey
-	}
+	effectiveSpace := runtime.Confluence.SpaceKey
 	if artifact {
-		if pushSpace != "" && pushSpace != metadata.Page.SpaceKey {
-			return fmt.Errorf("artifact belongs to space %q, not %q", metadata.Page.SpaceKey, pushSpace)
+		if (pushSpace != "" || pushProject != "") && effectiveSpace != metadata.Page.SpaceKey {
+			return fmt.Errorf("artifact belongs to space %q, not %q", metadata.Page.SpaceKey, effectiveSpace)
 		}
-		pushSpace = metadata.Page.SpaceKey
+		effectiveSpace = metadata.Page.SpaceKey
 	}
 
-	if pushSpace == "" {
-		return fmt.Errorf("space flag or --project required for push command")
-	}
-
-	client := newConfluenceClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
+	client := newConfluenceClient(runtime.Confluence.BaseURL, runtime.Confluence.Username, runtime.Confluence.APIToken, log)
 	if artifact {
 		return pushEditableArtifact(client, pushFile, metadata, pushForce)
 	}
@@ -123,19 +109,19 @@ func runPush(cmd *cobra.Command, args []string) error {
 			log.Debug("Using numeric parent page ID: %s", parentID)
 		} else {
 			log.Debug("Resolving parent by title: %s", pushParent)
-			parentPage, err := client.FindPageByTitle(pushSpace, pushParent)
+			parentPage, err := client.FindPageByTitle(effectiveSpace, pushParent)
 			if err != nil {
 				return fmt.Errorf("failed to resolve parent page '%s': %w", pushParent, err)
 			}
 			if parentPage == nil {
-				return fmt.Errorf("parent page '%s' not found in space '%s'", pushParent, pushSpace)
+				return fmt.Errorf("parent page '%s' not found in space '%s'", pushParent, effectiveSpace)
 			}
 			parentID = parentPage.ID
 		}
 	}
 
 	// Determine if page exists already (lookup by title)
-	existing, err := client.FindPageByTitle(pushSpace, doc.Title)
+	existing, err := client.FindPageByTitle(effectiveSpace, doc.Title)
 	if err != nil {
 		return fmt.Errorf("failed to search for existing page: %w", err)
 	}
@@ -147,19 +133,19 @@ func runPush(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to update page: %w", err)
 		}
-		fmt.Printf("Updated page '%s' (ID: %s) in space '%s'\n", page.Title, page.ID, pushSpace)
+		fmt.Printf("Updated page '%s' (ID: %s) in space '%s'\n", page.Title, page.ID, effectiveSpace)
 	} else {
 		if parentID != "" {
 			log.Debug("Creating new page with parent %s", parentID)
-			page, err = client.CreatePageWithParent(pushSpace, doc.Title, content, parentID)
+			page, err = client.CreatePageWithParent(effectiveSpace, doc.Title, content, parentID)
 		} else {
-			log.Debug("Creating new root page in space %s", pushSpace)
-			page, err = client.CreatePage(pushSpace, doc.Title, content)
+			log.Debug("Creating new root page in space %s", effectiveSpace)
+			page, err = client.CreatePage(effectiveSpace, doc.Title, content)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to create page: %w", err)
 		}
-		fmt.Printf("Created page '%s' (ID: %s) in space '%s'\n", page.Title, page.ID, pushSpace)
+		fmt.Printf("Created page '%s' (ID: %s) in space '%s'\n", page.Title, page.ID, effectiveSpace)
 	}
 
 	return nil

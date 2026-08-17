@@ -14,8 +14,9 @@ var (
 )
 
 var projectsCmd = &cobra.Command{
-	Use:   "projects",
-	Short: "List configured documentation projects",
+	Use:        "projects",
+	Short:      "List configured documentation projects",
+	Deprecated: "use 'conflux config profiles' instead; 'projects' will be removed in v2.0",
 	Long: `List projects defined in the configuration file. Shows the project name,
 associated Confluence space key, and markdown directory. The first project is the
 implicit default when none is specified with --project in other commands.`,
@@ -23,7 +24,11 @@ implicit default when none is specified with --project in other commands.`,
 }
 
 func runProjects(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load(configFile)
+	return runConfigProfiles(cmd, args)
+}
+
+func runConfigProfiles(cmd *cobra.Command, _ []string) error {
+	cfg, err := config.LoadRuntime(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

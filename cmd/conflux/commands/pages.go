@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"conflux/internal/config"
 	"conflux/internal/confluence"
 	"conflux/pkg/logger"
 )
@@ -51,7 +50,8 @@ This command helps debug page relationships and hierarchy issues by showing:
   - Parent page chain (ancestors)
   - Page hierarchy visualization
 
-Provide a space via --space or a project via --project (space inferred). You can specify a page by title or ID to start inspection from that page; if omitted an overview of the space roots is shown.`,
+Space may be selected through --space, --project, CONFLUX_SPACE_KEY,
+confluence.space_key, or the first configured project. You can specify a page by title or ID to start inspection from that page; if omitted an overview of the space roots is shown.`,
 	Example: `  conflux pages show -s DOCS -p "My Page"        # Inspect by title
   conflux pages show -s DOCS -p "123456789"      # Inspect by ID  
   conflux pages show -s DOCS                     # Show space overview
@@ -62,27 +62,13 @@ Provide a space via --space or a project via --project (space inferred). You can
 func runPages(cmd *cobra.Command, args []string) error {
 	log := logger.New(verbose)
 
-	cfg, err := config.LoadForListPages(configFile)
+	runtime, err := resolveRuntimeConfig(pagesSpace, pagesProject)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
+	effectiveSpace := runtime.Confluence.SpaceKey
 
-	effectiveSpace := pagesSpace
-
-	if pagesProject != "" {
-		if err := cfg.SelectProject(pagesProject); err != nil {
-			return fmt.Errorf("failed to select project: %w", err)
-		}
-		if effectiveSpace == "" {
-			effectiveSpace = cfg.Confluence.SpaceKey
-		}
-	}
-
-	if effectiveSpace == "" {
-		return fmt.Errorf("space flag or --project required for pages command")
-	}
-
-	client := newConfluenceClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
+	client := newConfluenceClient(runtime.Confluence.BaseURL, runtime.Confluence.Username, runtime.Confluence.APIToken, log)
 
 	pages, err := client.GetPageHierarchy(effectiveSpace, pagesParent)
 	if err != nil {
@@ -102,27 +88,13 @@ func runPages(cmd *cobra.Command, args []string) error {
 func runPagesShow(cmd *cobra.Command, args []string) error {
 	log := logger.New(verbose)
 
-	cfg, err := config.LoadForListPages(configFile)
+	runtime, err := resolveRuntimeConfig(pagesSpace, pagesProject)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
+	effectiveSpace := runtime.Confluence.SpaceKey
 
-	effectiveSpace := pagesSpace
-
-	if pagesProject != "" {
-		if err := cfg.SelectProject(pagesProject); err != nil {
-			return fmt.Errorf("failed to select project: %w", err)
-		}
-		if effectiveSpace == "" {
-			effectiveSpace = cfg.Confluence.SpaceKey
-		}
-	}
-
-	if effectiveSpace == "" {
-		return fmt.Errorf("space flag or --project required for pages show command")
-	}
-
-	client := newConfluenceClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
+	client := newConfluenceClient(runtime.Confluence.BaseURL, runtime.Confluence.Username, runtime.Confluence.APIToken, log)
 
 	if pagesShowPage == "" {
 		return showSpaceOverview(client, effectiveSpace)

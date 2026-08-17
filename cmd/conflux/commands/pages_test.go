@@ -58,17 +58,16 @@ func resetPagesFlags() {
 	pagesShowDetails = false
 }
 
-func TestRunPages_MissingSpaceReturnsError(t *testing.T) {
+func TestRunPages_DefaultProjectInfersSpace(t *testing.T) {
 	resetPagesFlags()
 	configFile = writePagesTestConfig(t, pagesTestConfigWithProjectsYAML)
 	verbose = false
 
-	err := runPages(pagesCmd, nil)
-	if err == nil {
-		t.Fatal("expected error for missing space")
-	}
-	if !strings.Contains(err.Error(), "space flag or --project required") {
-		t.Fatalf("unexpected error: %v", err)
+	mock := confluence.NewMockClient()
+	mock.SpaceHierarchies["PROJ"] = []confluence.PageInfo{{ID: "1", Title: "Default"}}
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient { return mock }
+	if err := runPages(pagesCmd, nil); err != nil {
+		t.Fatalf("default project was not resolved: %v", err)
 	}
 }
 
@@ -142,17 +141,15 @@ func TestRunPages_WithParentFilter(t *testing.T) {
 	}
 }
 
-func TestRunPagesShow_MissingSpaceReturnsError(t *testing.T) {
+func TestRunPagesShow_DefaultProjectInfersSpace(t *testing.T) {
 	resetPagesFlags()
 	configFile = writePagesTestConfig(t, pagesTestConfigWithProjectsYAML)
 	verbose = false
 
-	err := runPagesShow(pagesShowCmd, nil)
-	if err == nil {
-		t.Fatal("expected error for missing space")
-	}
-	if !strings.Contains(err.Error(), "space flag or --project required") {
-		t.Fatalf("unexpected error: %v", err)
+	mock := confluence.NewMockClient()
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient { return mock }
+	if err := runPagesShow(pagesShowCmd, nil); err != nil {
+		t.Fatalf("default project was not resolved: %v", err)
 	}
 }
 
@@ -497,7 +494,7 @@ func TestRunPages_InvalidProjectReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid project")
 	}
-	if !strings.Contains(err.Error(), "failed to select project") {
+	if !strings.Contains(err.Error(), "project \"nonexistent\" not found") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -512,7 +509,7 @@ func TestRunPagesShow_InvalidProjectReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid project")
 	}
-	if !strings.Contains(err.Error(), "failed to select project") {
+	if !strings.Contains(err.Error(), "project \"nonexistent\" not found") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

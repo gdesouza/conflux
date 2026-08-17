@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -100,6 +101,16 @@ func fileExists(p string) bool {
 }
 
 func Load(path string) (*Config, error) {
+	return load(path, true, false)
+}
+
+// LoadRuntime loads configuration for commands whose space can be selected at
+// runtime by a flag, profile, environment variable, or configured default.
+func LoadRuntime(path string) (*Config, error) {
+	return load(path, false, true)
+}
+
+func load(path string, requireConfiguredSpace, applyEnvironment bool) (*Config, error) {
 	resolved := ResolveConfigPath(path)
 	data, err := os.ReadFile(resolved)
 	if err != nil {
@@ -114,12 +125,34 @@ func Load(path string) (*Config, error) {
 	// Set defaults
 	config.setMermaidDefaults()
 	config.setImageDefaults()
+	if applyEnvironment {
+		config.applyEnvironment()
+	}
 
-	if err := config.validate(); err != nil {
+	if err := config.validateCommon(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	if requireConfiguredSpace && len(config.Projects) == 0 && config.Confluence.SpaceKey == "" {
+		return nil, fmt.Errorf("invalid config: confluence.space_key is required (or define projects with their own space_key)")
 	}
 
 	return &config, nil
+}
+
+func (c *Config) applyEnvironment() {
+	overrides := []struct {
+		name   string
+		target *string
+	}{
+		{name: "CONFLUX_BASE_URL", target: &c.Confluence.BaseURL},
+		{name: "CONFLUX_USERNAME", target: &c.Confluence.Username},
+		{name: "CONFLUX_API_TOKEN", target: &c.Confluence.APIToken},
+	}
+	for _, override := range overrides {
+		if value := strings.TrimSpace(os.Getenv(override.name)); value != "" {
+			*override.target = value
+		}
+	}
 }
 
 func (c *Config) setMermaidDefaults() {
@@ -194,93 +227,15 @@ func (c *Config) validateImages() error {
 
 // LoadForSync loads config with relaxed validation for space_key (can be overridden by CLI or projects)
 func LoadForSync(path string) (*Config, error) {
-	resolved := ResolveConfigPath(path)
-	data, err := os.ReadFile(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-	config.setMermaidDefaults()
-	config.setImageDefaults()
-	if err := config.validateForSync(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-	return &config, nil
+	return LoadRuntime(path)
 }
 
 // LoadForListPages loads config with relaxed validation (space_key not required)
 func LoadForListPages(path string) (*Config, error) {
-	resolved := ResolveConfigPath(path)
-	data, err := os.ReadFile(resolved)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-	config.setMermaidDefaults()
-	config.setImageDefaults()
-	if err := config.validateForListPages(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-	return &config, nil
+	return LoadRuntime(path)
 }
 
-func (c *Config) validate() error {
-	if c.Confluence.BaseURL == "" {
-		return fmt.Errorf("confluence.base_url is required")
-	}
-	if c.Confluence.Username == "" {
-		return fmt.Errorf("confluence.username is required")
-	}
-	if c.Confluence.APIToken == "" {
-		return fmt.Errorf("confluence.api_token is required")
-	}
-	// Global space key optional when projects present
-	if len(c.Projects) == 0 && c.Confluence.SpaceKey == "" {
-		return fmt.Errorf("confluence.space_key is required (or define projects with their own space_key)")
-	}
-	if err := c.validateProjects(); err != nil {
-		return err
-	}
-	if err := c.validateMermaid(); err != nil {
-		return err
-	}
-	if err := c.validateImages(); err != nil {
-		return err
-	}
-	return nil
-}
-
-// validateForSync validates config for sync (space key can come from project or CLI)
-func (c *Config) validateForSync() error {
-	if c.Confluence.BaseURL == "" {
-		return fmt.Errorf("confluence.base_url is required")
-	}
-	if c.Confluence.Username == "" {
-		return fmt.Errorf("confluence.username is required")
-	}
-	if c.Confluence.APIToken == "" {
-		return fmt.Errorf("confluence.api_token is required")
-	}
-	if err := c.validateProjects(); err != nil {
-		return err
-	}
-	if err := c.validateMermaid(); err != nil {
-		return err
-	}
-	if err := c.validateImages(); err != nil {
-		return err
-	}
-	return nil
-}
-
-// validateForListPages validates config for list-pages (space key provided via flag or project)
-func (c *Config) validateForListPages() error {
+func (c *Config) validateCommon() error {
 	if c.Confluence.BaseURL == "" {
 		return fmt.Errorf("confluence.base_url is required")
 	}

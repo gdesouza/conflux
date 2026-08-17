@@ -25,8 +25,9 @@ var (
 
 // syncCmd represents the sync command
 var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Sync local markdown files to Confluence with change detection",
+	Use:        "sync",
+	Short:      "Sync local markdown files to Confluence with change detection",
+	Deprecated: "use 'conflux pull --output', edit, then 'conflux push'; 'sync' is frozen and will be removed in v2.0",
 	Long: `Sync local markdown files to Confluence pages with intelligent change detection.
 
 The sync command analyzes your markdown files, detects what has changed since the last sync,

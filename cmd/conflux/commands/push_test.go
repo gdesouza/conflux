@@ -132,6 +132,21 @@ func TestPushEditableArtifactAdvancesMetadataVersion(t *testing.T) {
 	}
 }
 
+func TestPushEditableArtifactUsesMetadataSpaceWithCredentialsOnlyConfig(t *testing.T) {
+	file, metadata := writePushArtifact(t, "Body.\n", nil)
+	mock := artifactPushMock(metadata)
+	configurePushTest(t, file, mock)
+	configFile = writePagesTestConfig(t, `confluence:
+  base_url: http://example
+  username: u
+  api_token: t
+`)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("artifact metadata space was not resolved: %v", err)
+	}
+}
+
 func TestPushEditableArtifactRejectsStaleRemote(t *testing.T) {
 	file, metadata := writePushArtifact(t, "Body.\n", nil)
 	mock := artifactPushMock(metadata)
