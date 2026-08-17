@@ -218,6 +218,12 @@ func markdownToStorage(markdown string, fragments map[string]string) (string, []
 			storage.WriteString("<blockquote><p>" + convertInline(match[1], &references) + "</p></blockquote>")
 			continue
 		}
+		if match := imageLink.FindStringSubmatch(trimmed); len(paragraph) == 0 && match != nil && match[0] == trimmed {
+			closeParagraph()
+			closeList()
+			storage.WriteString(convertInline(trimmed, &references))
+			continue
+		}
 		if trimmed == "" {
 			closeParagraph()
 			closeList()

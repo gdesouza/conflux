@@ -207,6 +207,36 @@ func TestRenderArtifactConvertsBlockquoteAndAttachmentLink(t *testing.T) {
 	}
 }
 
+func TestRenderArtifactKeepsImageInParagraphAcrossSoftLineBreak(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "Text before\n![diagram](page.attachments/diagram.png)\n"
+
+	artifact, err := RenderArtifact(markdown, metadata, []LocalAttachment{{Filename: "diagram.png", Content: []byte("image")}})
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	want := `<p>Text before <ac:image ac:alt="diagram"><ri:attachment ri:filename="diagram.png" /></ac:image></p>`
+	if artifact.Storage != want {
+		t.Fatalf("storage = %q, want %q", artifact.Storage, want)
+	}
+}
+
+func TestRenderArtifactPromotesImageAfterBlockBoundary(t *testing.T) {
+	metadata := pushMetadata()
+	metadata.PreservedFragments = map[string]string{}
+	markdown := "Text before\n\n![diagram](page.attachments/diagram.png)\n"
+
+	artifact, err := RenderArtifact(markdown, metadata, []LocalAttachment{{Filename: "diagram.png", Content: []byte("image")}})
+	if err != nil {
+		t.Fatalf("RenderArtifact returned error: %v", err)
+	}
+	want := `<p>Text before</p><ac:image ac:alt="diagram"><ri:attachment ri:filename="diagram.png" /></ac:image>`
+	if artifact.Storage != want {
+		t.Fatalf("storage = %q, want %q", artifact.Storage, want)
+	}
+}
+
 func TestRenderArtifactDeduplicatesUploadIntents(t *testing.T) {
 	metadata := pushMetadata()
 	metadata.PreservedFragments = map[string]string{}

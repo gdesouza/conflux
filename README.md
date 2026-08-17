@@ -441,6 +441,14 @@ Current limitations:
 
 ### Editable Artifact Markdown
 
+#### Fidelity contract
+
+The pull/edit/push contract is covered by fixture-driven round-trip tests. With no edits, Conflux retains visible text, attachment references, ordering, and supported storage semantics for ordinary Markdown, images, files, code macros, Jira inline previews, and simple tables.
+
+Confluence structures without a documented editable Markdown representation are kept verbatim behind preservation markers. This includes unknown or nested macros, layouts, custom XML namespaces, namespaced attributes, and complex tables containing Confluence macros. Simple tables remain editable and retain their layout and width directives.
+
+Deleting or duplicating a preservation marker, omitting a referenced attachment, or pushing over a newer remote page fails explicitly instead of silently discarding content. A Markdown file and its matching `.attachments` directory may be renamed together; the page identity continues to come from `metadata.json`.
+
 #### Preserved Confluence content
 
 Confluence elements that are not editable in Markdown are represented at their original position:

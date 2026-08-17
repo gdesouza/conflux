@@ -322,6 +322,35 @@ func TestPushEditableArtifactCreatesNewAttachment(t *testing.T) {
 	}
 }
 
+func TestPushEditableArtifactAfterPairIsRenamed(t *testing.T) {
+	body := []byte("image")
+	digest := sha256.Sum256(body)
+	attachment := content.AttachmentMetadata{ID: "att-1", Filename: "diagram.png", MediaType: "image/png", SHA256: hex.EncodeToString(digest[:])}
+	file, metadata := writePushArtifact(t, "![diagram](page.attachments/diagram.png)\n", []content.AttachmentMetadata{attachment})
+	originalPaths, _ := content.PathsFor(file)
+	if err := os.WriteFile(filepath.Join(originalPaths.AttachmentsDir, "diagram.png"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	renamed := filepath.Join(filepath.Dir(file), "renamed.md")
+	renamedPaths, _ := content.PathsFor(renamed)
+	if err := os.Rename(file, renamed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(originalPaths.AttachmentsDir, renamedPaths.AttachmentsDir); err != nil {
+		t.Fatal(err)
+	}
+	mock := artifactPushMock(metadata)
+	configurePushTest(t, renamed, mock)
+
+	if err := runPush(pushCmd, nil); err != nil {
+		t.Fatalf("runPush returned error after artifact rename: %v", err)
+	}
+	updated, err := content.LoadArtifactMetadata(renamed)
+	if err != nil || updated.Page.BaseVersion != 8 {
+		t.Fatalf("renamed metadata version=%d error=%v", updated.Page.BaseVersion, err)
+	}
+}
+
 func TestPushEditableArtifactVersionsConcurrentSameNameAttachment(t *testing.T) {
 	file, metadata := writePushArtifact(t, "[runbook](page.attachments/runbook.pdf)\n", nil)
 	paths, _ := content.PathsFor(file)
