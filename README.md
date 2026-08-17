@@ -294,16 +294,21 @@ mermaid:
 #### Space Resolution Precedence
 1. Explicit CLI `--space` flag
 2. Selected project via `--project <name>`
-3. Default project (first in list) if any
-4. Legacy top-level `confluence.space_key`
+3. `CONFLUX_SPACE_KEY` environment variable
+4. Top-level `confluence.space_key`
+5. Default project (first in list) if any
+
+This precedence is shared by `pages`, `pull`, and `push`. `--space` may be combined with `--project`: the explicit space wins while the selected profile still supplies its local settings. Parsed configuration is not mutated during resolution.
+
+Connection settings can be overridden with `CONFLUX_BASE_URL`, `CONFLUX_USERNAME`, and `CONFLUX_API_TOKEN`. Non-empty environment values take precedence over their YAML counterparts.
 
 #### Selecting a Project
 ```bash
-# Sync using the 'platform' project (infer space + docs path)
-conflux sync --project platform
+# Inspect configured profiles
+conflux config profiles
 
 # List pages for 'core' without specifying --space
-conflux list-pages --project core
+conflux pages --project core
 
 # Fetch a page with project inference
 conflux pull --project core --page "Getting Started"
@@ -311,14 +316,24 @@ conflux pull --project core --page "Getting Started"
 
 #### Listing Projects
 ```bash
-conflux projects
-conflux projects --show-exclude
+conflux config profiles
+conflux config profiles --show-exclude
 ```
 Outputs all configured projects, marking the first one as the default.
 
 ## Usage
 
-### Sync Command (Default)
+### Sync Command (Deprecated)
+
+`sync` is frozen and will be removed in v2.0. New workflows should pull an editable artifact, edit it locally, and push it with optimistic conflict protection:
+
+```bash
+conflux pull -s DOCS -p 123456789 --output ./page.md
+# edit page.md
+conflux push -f ./page.md
+```
+
+The legacy commands below remain available during the deprecation window:
 
 ```bash
 # Basic usage - sync current directory with default config
@@ -433,7 +448,7 @@ Behavior:
 - Determines the Confluence page title from the first level-1 markdown heading (`# Title`).
 - If a page with that title already exists in the resolved space it is updated; otherwise it is created.
 - Parent page may be provided as a numeric ID or as a title (looked up in the target space).
-- Space resolution precedence matches other commands: `--space` > `--project` > default project > legacy top-level `space_key`.
+- Space resolution precedence matches other commands: `--space` > `--project` > `CONFLUX_SPACE_KEY` > top-level `space_key` > default project.
 
 Current limitations:
 - The `push` command currently performs a basic markdown-to-Confluence storage conversion and does NOT yet run the second-pass processing for Mermaid diagrams or image attachment uploads that `sync` performs. These enhancements can be added in a future iteration (e.g., reusing the post-processing pipeline from sync).
@@ -513,14 +528,15 @@ conflux pages get -P core -p "Architecture" -d
 
 ### CLI Commands
 
-- `sync` - Sync local markdown files to Confluence with change detection
+- `sync` - Deprecated legacy synchronization workflow; removal planned for v2.0
 - `push` - Push a single markdown file to Confluence
 - `pull` - Download a Confluence page as markdown (storage, html, or markdown formats)
 - `pages` - List and inspect Confluence pages
 - `pages list` - List page hierarchy from a Confluence space
 - `pages get` - Show detailed page information and relationships
-- `projects` - List configured projects (multi-project mode)
+- `projects` - Deprecated alias for `config profiles`; removal planned for v2.0
 - `config` - Create or edit the configuration file (interactive or scripted)
+- `config profiles` - List configured profiles and effective default
 - `version` - Show version information
 
 ### Config Command
@@ -580,6 +596,7 @@ Notes:
 - When `projects` are defined, top-level `confluence.space_key` becomes optional (space inferred by `--project`).
 - `--yes` auto-confirms saving (otherwise a confirmation prompt appears in interactive mode).
 - `--print` skips writing the file—useful for generating config in CI or diffing.
+- Use `conflux config profiles` to inspect profile names, spaces, local directories, and the default profile. The standalone `projects` command is deprecated and will be removed in v2.0.
 
 ### CLI Flags
 

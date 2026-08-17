@@ -15,13 +15,12 @@ var (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "conflux",
-	Short: "Sync local markdown files to Confluence",
-	Long: `Conflux is a tool for synchronizing local markdown files to Confluence pages.
-It provides commands to sync documentation and list page hierarchies with visual 
-formatting including icons and tree structures for easy navigation.`,
-	Example: `  conflux sync                                    # Sync current directory
-  conflux sync -docs ./docs -space DOCS -dry-run # Sync with options
-  conflux push -f ./doc.md -s DOCS               # Push single file
+	Short: "Edit Confluence pages through local Markdown",
+	Long: `Conflux provides a safe pull, edit, and push workflow for Confluence pages,
+plus commands for configuration and page inspection.`,
+	Example: `  conflux pull -s DOCS -p 123 --output ./page.md # Pull editable artifact
+  conflux push -f ./page.md                       # Push guarded edits
+  conflux push -f ./doc.md -s DOCS               # Create standalone page
   conflux pull -s DOCS -p "My Page" -f markdown  # Download page as markdown
   conflux pages -s DOCS                          # List all pages
   conflux pages show -s DOCS -p "API"            # Show page details`,

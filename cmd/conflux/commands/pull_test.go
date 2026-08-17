@@ -110,7 +110,7 @@ func TestRunPull_ValidFormats(t *testing.T) {
 	}
 }
 
-func TestRunPull_MissingSpace(t *testing.T) {
+func TestRunPull_UsesConfiguredSpaceByDefault(t *testing.T) {
 	resetPullFlags()
 	configFile = writePullTempConfig(t)
 	verbose = false
@@ -119,12 +119,13 @@ func TestRunPull_MissingSpace(t *testing.T) {
 	pullFormat = "storage"
 	pullProject = ""
 
-	err := runPull(pullCmd, nil)
-	if err == nil {
-		t.Fatal("expected error for missing space")
-	}
-	if err.Error() != "space flag or --project required for pull command" {
-		t.Fatalf("unexpected error: %v", err)
+	mock := confluence.NewMockClient()
+	page := &confluence.Page{ID: "123", Title: "Page"}
+	page.Body.Storage.Value = "body"
+	mock.Pages["123"] = page
+	newConfluenceClient = func(baseURL, username, apiToken string, log *logger.Logger) confluence.ConfluenceClient { return mock }
+	if err := runPull(pullCmd, nil); err != nil {
+		t.Fatalf("configured space was not resolved: %v", err)
 	}
 }
 

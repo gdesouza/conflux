@@ -13,7 +13,6 @@ import (
 	htmldoc "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/spf13/cobra"
 
-	"conflux/internal/config"
 	"conflux/internal/confluence"
 	"conflux/pkg/logger"
 )
@@ -37,9 +36,8 @@ var pullCmd = &cobra.Command{
 	Short: "Download a Confluence page as markdown",
 	Long: `Fetch the storage-format content of a Confluence page by ID or title.
 
-You must provide either:
-  - a space key via --space, or
-  - a project via --project (space inferred from project)
+Space may be selected through --space, --project, CONFLUX_SPACE_KEY,
+confluence.space_key, or the first configured project.
 
 Then specify either a numeric page ID or a page title with --page.`,
 	Example: `  conflux pull -space DOCS -page 123456789
@@ -62,25 +60,13 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	log := logger.New(verbose)
 
-	cfg, err := config.LoadForListPages(configFile)
+	runtime, err := resolveRuntimeConfig(pullSpace, pullProject)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
+	effectiveSpace := runtime.Confluence.SpaceKey
 
-	// Project selection if provided
-	if pullProject != "" {
-		if err := cfg.SelectProject(pullProject); err != nil {
-			return fmt.Errorf("failed to select project: %w", err)
-		}
-		if pullSpace == "" {
-			pullSpace = cfg.Confluence.SpaceKey
-		}
-	}
-	if pullSpace == "" {
-		return fmt.Errorf("space flag or --project required for pull command")
-	}
-
-	client := newConfluenceClient(cfg.Confluence.BaseURL, cfg.Confluence.Username, cfg.Confluence.APIToken, log)
+	client := newConfluenceClient(runtime.Confluence.BaseURL, runtime.Confluence.Username, runtime.Confluence.APIToken, log)
 
 	var page *confluence.Page
 
@@ -95,14 +81,14 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	// If not found by ID, try by title
 	if page == nil {
-		page, err = client.FindPageByTitle(pullSpace, pullIDOrTitle)
+		page, err = client.FindPageByTitle(effectiveSpace, pullIDOrTitle)
 		if err != nil {
 			return fmt.Errorf("failed to find page by title: %w", err)
 		}
 	}
 
 	if page == nil {
-		return fmt.Errorf("page '%s' not found in space '%s'", pullIDOrTitle, pullSpace)
+		return fmt.Errorf("page '%s' not found in space '%s'", pullIDOrTitle, effectiveSpace)
 	}
 	if pullOutput != "" {
 		if page.Version.Number < 1 {
@@ -114,7 +100,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("page '%s' disappeared while preparing editable artifact", pullIDOrTitle)
 			}
 		}
-		return pullEditableArtifact(cmd.Context(), cmd.OutOrStdout(), client, page, pullSpace, pullOutput, pullForce)
+		return pullEditableArtifact(cmd.Context(), cmd.OutOrStdout(), client, page, effectiveSpace, pullOutput, pullForce)
 	}
 
 	// Print header then the requested format

@@ -40,8 +40,16 @@ Features:
 	RunE: runConfig,
 }
 
+var cfgProfilesCmd = &cobra.Command{
+	Use:   "profiles",
+	Short: "List configured profiles and their effective defaults",
+	RunE:  runConfigProfiles,
+}
+
 func init() {
 	rootCmd.AddCommand(cfgCmd)
+	cfgCmd.AddCommand(cfgProfilesCmd)
+	cfgProfilesCmd.Flags().BoolVar(&projectsShowRaw, "show-exclude", false, "Show exclude patterns for each profile")
 	cfgCmd.Flags().StringArrayVar(&cfgSets, "set", nil, "Set a config field using dotted path (e.g. confluence.base_url=http://example)")
 	cfgCmd.Flags().StringArrayVar(&cfgAddProjects, "add-project", nil, "Add a project definition (e.g. \"name=docs,space_key=DOCS,markdown_dir=./docs\")")
 	cfgCmd.Flags().StringArrayVar(&cfgRemoveProjects, "remove-project", nil, "Remove an existing project by name (repeatable)")
