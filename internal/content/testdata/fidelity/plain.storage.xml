@@ -1,0 +1,4 @@
+<h1>Deployment Guide</h1>
+<p>Deploy the <strong>release</strong> with <em>care</em> and use <code>conflux</code>.</p>
+<ol><li>Build</li><li>Push</li></ol>
+<blockquote><p>Verify production.</p></blockquote>

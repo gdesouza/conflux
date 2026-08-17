@@ -1,0 +1,3 @@
+<ac:layout><ac:layout-section ac:type="two_equal"><ac:layout-cell><p>Left</p></ac:layout-cell><ac:layout-cell><p>Right</p></ac:layout-cell></ac:layout-section></ac:layout>
+<p ac:local-id="paragraph-1">Namespaced attribute</p>
+<custom:widget xmlns:custom="urn:example:widget" custom:mode="full"><custom:value>Keep me</custom:value></custom:widget>

@@ -105,11 +105,19 @@ func RenderStorage(page StoragePage) (EditableArtifact, error) {
 			if !ok {
 				return EditableArtifact{}, fmt.Errorf("confluence image is missing an attachment filename")
 			}
-			markdownParts = append(markdownParts, fmt.Sprintf("![%s](%s)", filename, attachmentMarkdownPath(attachmentDirectory, filename)))
-			continue
+			alt, editable := editableImageAlt(node.Raw)
+			if editable {
+				if alt == "" {
+					alt = filename
+				}
+				markdownParts = append(markdownParts, fmt.Sprintf("![%s](%s)", alt, attachmentMarkdownPath(attachmentDirectory, filename)))
+				continue
+			}
+			// Keep image sizing, layout, or other unsupported attributes
+			// losslessly instead of emitting incomplete Markdown.
 		}
 
-		if isEditableHTMLNode(node) && !containsConfluenceNamespace(node.Raw) {
+		if isEditableHTMLNode(node) && !containsConfluenceNamespace(node.Raw) && !hasNamespacedAttributes(node.Raw) {
 			markdown, err := htmldoc.ConvertString(node.Raw)
 			if err != nil {
 				return EditableArtifact{}, fmt.Errorf("convert supported storage node %s: %w", node.Name.Local, err)
@@ -131,7 +139,7 @@ func RenderStorage(page StoragePage) (EditableArtifact, error) {
 			markdownParts = append(markdownParts, jiraMarkdown(jira))
 			continue
 		}
-		if node.Name.Space == "" && node.Name.Local == "table" {
+		if node.Name.Space == "" && node.Name.Local == "table" && !containsConfluenceNamespace(node.Raw) {
 			markdown, err := storageTableMarkdown(node.Raw)
 			if err != nil {
 				return EditableArtifact{}, fmt.Errorf("convert Confluence table: %w", err)
@@ -159,6 +167,58 @@ func RenderStorage(page StoragePage) (EditableArtifact, error) {
 		return EditableArtifact{}, fmt.Errorf("validate rendered artifact: %w", err)
 	}
 	return EditableArtifact{Markdown: markdown, Metadata: metadata, Downloads: downloads}, nil
+}
+
+func editableImageAlt(raw string) (string, bool) {
+	decoder := storageNodeDecoder(raw)
+	var alt string
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return alt, err == io.EOF && !strings.ContainsAny(alt, "]\r\n")
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local == "conflux-root" {
+			continue
+		}
+		switch {
+		case start.Name.Space == "urn:conflux:ac" && start.Name.Local == "image":
+			for _, attribute := range start.Attr {
+				if attribute.Name.Space != "urn:conflux:ac" || attribute.Name.Local != "alt" {
+					return "", false
+				}
+				alt = attribute.Value
+			}
+		case start.Name.Space == "urn:conflux:ri" && start.Name.Local == "attachment":
+			for _, attribute := range start.Attr {
+				if attribute.Name.Space != "urn:conflux:ri" || attribute.Name.Local != "filename" {
+					return "", false
+				}
+			}
+		default:
+			return "", false
+		}
+	}
+}
+
+func hasNamespacedAttributes(raw string) bool {
+	decoder := storageNodeDecoder(raw)
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local == "conflux-root" {
+			continue
+		}
+		for _, attribute := range start.Attr {
+			if attribute.Name.Space != "" {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func tokenizeStorage(storage string) ([]storageNode, error) {
