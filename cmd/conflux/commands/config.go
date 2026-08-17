@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -30,10 +29,10 @@ var cfgCmd = &cobra.Command{
 	Long: `Interactively create or edit the Conflux configuration file (config.yaml by default).
 
 Features:
-- Interactive prompts for Confluence, Projects, Mermaid, and Images sections
+- Interactive prompts for Confluence and named space profiles
 - Apply key=value overrides via --set
-- Add projects via --add-project (e.g. --add-project "name=docs,space_key=DOCS,markdown_dir=./docs")
-- Remove projects via --remove-project <name>
+- Add profiles via --add-project (e.g. --add-project "name=docs,space_key=DOCS")
+- Remove profiles via --remove-project <name>
 - Non-interactive scripting with --non-interactive --yes --set ...
 - Print resulting YAML with --print instead of writing
 `,
@@ -49,10 +48,9 @@ var cfgProfilesCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(cfgCmd)
 	cfgCmd.AddCommand(cfgProfilesCmd)
-	cfgProfilesCmd.Flags().BoolVar(&projectsShowRaw, "show-exclude", false, "Show exclude patterns for each profile")
 	cfgCmd.Flags().StringArrayVar(&cfgSets, "set", nil, "Set a config field using dotted path (e.g. confluence.base_url=http://example)")
-	cfgCmd.Flags().StringArrayVar(&cfgAddProjects, "add-project", nil, "Add a project definition (e.g. \"name=docs,space_key=DOCS,markdown_dir=./docs\")")
-	cfgCmd.Flags().StringArrayVar(&cfgRemoveProjects, "remove-project", nil, "Remove an existing project by name (repeatable)")
+	cfgCmd.Flags().StringArrayVar(&cfgAddProjects, "add-project", nil, "Add a named space profile (e.g. \"name=docs,space_key=DOCS\")")
+	cfgCmd.Flags().StringArrayVar(&cfgRemoveProjects, "remove-project", nil, "Remove an existing profile by name (repeatable)")
 	cfgCmd.Flags().BoolVar(&cfgYes, "yes", false, "Automatically confirm saving changes")
 	cfgCmd.Flags().BoolVar(&cfgPrint, "print", false, "Print resulting YAML instead of writing to file")
 	cfgCmd.Flags().BoolVar(&cfgNonInteractive, "non-interactive", false, "Disable interactive prompts (use with --set / --add-project)")
@@ -170,86 +168,10 @@ func setField(cfg *config.Config, key, value string) error {
 		cfg.Confluence.APIToken = value
 	case "confluence.space_key":
 		cfg.Confluence.SpaceKey = value
-	case "local.markdown_dir":
-		cfg.Local.MarkdownDir = value
-	case "local.exclude":
-		cfg.Local.Exclude = splitList(value)
-	case "mermaid.mode":
-		cfg.Mermaid.Mode = value
-	case "mermaid.format":
-		cfg.Mermaid.Format = value
-	case "mermaid.cli_path":
-		cfg.Mermaid.CLIPath = value
-	case "mermaid.theme":
-		cfg.Mermaid.Theme = value
-	case "mermaid.width":
-		w, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.Mermaid.Width = w
-	case "mermaid.height":
-		h, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.Mermaid.Height = h
-	case "mermaid.scale":
-		s, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return err
-		}
-		cfg.Mermaid.Scale = s
-	case "images.supported_formats":
-		cfg.Images.SupportedFormats = splitList(value)
-	case "images.max_file_size":
-		m, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		cfg.Images.MaxFileSize = m
-	case "images.resize_large":
-		b, err := parseBool(value)
-		if err != nil {
-			return err
-		}
-		cfg.Images.ResizeLarge = b
-	case "images.max_width":
-		mw, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.Images.MaxWidth = mw
-	case "images.max_height":
-		mh, err := strconv.Atoi(value)
-		if err != nil {
-			return err
-		}
-		cfg.Images.MaxHeight = mh
 	default:
 		return fmt.Errorf("unsupported key '%s'", key)
 	}
 	return nil
-}
-
-func splitList(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	var out []string
-	for _, p := range parts {
-		out = append(out, strings.TrimSpace(p))
-	}
-	return out
-}
-
-func parseBool(s string) (bool, error) {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		return false, err
-	}
-	return b, nil
 }
 
 func applyAddProjects(cfg *config.Config, defs []string) error {
@@ -286,16 +208,12 @@ func parseProjectDefinition(d string) (config.ProjectConfig, error) {
 			p.Name = pair[1]
 		case "space_key":
 			p.SpaceKey = pair[1]
-		case "markdown_dir":
-			p.Local.MarkdownDir = pair[1]
-		case "exclude":
-			p.Local.Exclude = splitList(pair[1])
 		default:
 			return p, fmt.Errorf("unknown project field: %s", pair[0])
 		}
 	}
-	if p.Name == "" || p.SpaceKey == "" || p.Local.MarkdownDir == "" {
-		return p, errors.New("project requires name, space_key, and markdown_dir")
+	if p.Name == "" || p.SpaceKey == "" {
+		return p, errors.New("project requires name and space_key")
 	}
 	return p, nil
 }
@@ -358,16 +276,6 @@ func interactiveEdit(cfg *config.Config, existed bool) error {
 		return err
 	}
 
-	// Mermaid
-	if err := promptMermaid(cfg); err != nil {
-		return err
-	}
-
-	// Images
-	if err := promptImages(cfg); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -409,21 +317,15 @@ func promptProjects(cfg *config.Config) error {
 		}
 
 		// Gather fields
-		var name, spaceKey, dir, exclude string
+		var name, spaceKey string
 		if err := survey.AskOne(&survey.Input{Message: "Project Name"}, &name, survey.WithValidator(survey.Required)); err != nil {
 			return err
 		}
 		if err := survey.AskOne(&survey.Input{Message: "Space Key"}, &spaceKey, survey.WithValidator(survey.Required)); err != nil {
 			return err
 		}
-		if err := survey.AskOne(&survey.Input{Message: "Markdown Dir"}, &dir, survey.WithValidator(survey.Required)); err != nil {
-			return err
-		}
-		if err := survey.AskOne(&survey.Input{Message: "Exclude (comma list, optional)"}, &exclude); err != nil {
-			return err
-		}
 
-		p := config.ProjectConfig{Name: name, SpaceKey: spaceKey, Local: config.LocalConfig{MarkdownDir: dir, Exclude: splitList(exclude)}}
+		p := config.ProjectConfig{Name: name, SpaceKey: spaceKey}
 		// Replace if exists
 		replaced := false
 		for i, existing := range cfg.Projects {
@@ -438,131 +340,4 @@ func promptProjects(cfg *config.Config) error {
 		}
 	}
 	return nil
-}
-
-func promptMermaid(cfg *config.Config) error {
-	var edit bool
-	if err := survey.AskOne(&survey.Confirm{Message: "Edit Mermaid settings?", Default: false}, &edit); err != nil {
-		return err
-	}
-	if !edit {
-		return nil
-	}
-	themes := []string{"default", "dark", "forest", "neutral"}
-	mode := cfg.Mermaid.Mode
-	if mode == "" {
-		mode = "convert-to-image"
-	}
-	format := cfg.Mermaid.Format
-	if format == "" {
-		format = "svg"
-	}
-	qs := []*survey.Question{
-		{Name: "mode", Prompt: &survey.Select{Message: "Mermaid Mode", Options: []string{"preserve", "convert-to-image"}, Default: mode}},
-		{Name: "format", Prompt: &survey.Select{Message: "Mermaid Output Format", Options: []string{"svg", "png", "pdf"}, Default: format}},
-		{Name: "cli_path", Prompt: &survey.Input{Message: "Mermaid CLI Path", Default: cfg.Mermaid.CLIPath}},
-		{Name: "theme", Prompt: &survey.Select{Message: "Theme", Options: themes, Default: firstNonEmpty(cfg.Mermaid.Theme, "default")}},
-		{Name: "width", Prompt: &survey.Input{Message: "Width", Default: intToStringOr(cfg.Mermaid.Width, 1200)}},
-		{Name: "height", Prompt: &survey.Input{Message: "Height", Default: intToStringOr(cfg.Mermaid.Height, 800)}},
-		{Name: "scale", Prompt: &survey.Input{Message: "Scale", Default: floatToStringOr(cfg.Mermaid.Scale, 2.0)}},
-	}
-	answers := struct {
-		Mode   string `survey:"mode"`
-		Format string `survey:"format"`
-		CLI    string `survey:"cli_path"`
-		Theme  string `survey:"theme"`
-		Width  string `survey:"width"`
-		Height string `survey:"height"`
-		Scale  string `survey:"scale"`
-	}{}
-	if err := survey.Ask(qs, &answers); err != nil {
-		return err
-	}
-	cfg.Mermaid.Mode = answers.Mode
-	cfg.Mermaid.Format = answers.Format
-	cfg.Mermaid.CLIPath = answers.CLI
-	cfg.Mermaid.Theme = answers.Theme
-	if v, err := strconv.Atoi(answers.Width); err == nil {
-		cfg.Mermaid.Width = v
-	}
-	if v, err := strconv.Atoi(answers.Height); err == nil {
-		cfg.Mermaid.Height = v
-	}
-	if v, err := strconv.ParseFloat(answers.Scale, 64); err == nil {
-		cfg.Mermaid.Scale = v
-	}
-	return nil
-}
-
-func promptImages(cfg *config.Config) error {
-	var edit bool
-	if err := survey.AskOne(&survey.Confirm{Message: "Edit Image settings?", Default: false}, &edit); err != nil {
-		return err
-	}
-	if !edit {
-		return nil
-	}
-	qs := []*survey.Question{
-		{Name: "supported", Prompt: &survey.Input{Message: "Supported Formats (comma)", Default: strings.Join(cfg.Images.SupportedFormats, ",")}},
-		{Name: "max_file_size", Prompt: &survey.Input{Message: "Max File Size (bytes)", Default: int64ToStringOr(cfg.Images.MaxFileSize, 10*1024*1024)}},
-		{Name: "resize_large", Prompt: &survey.Input{Message: "Resize Large Images (true/false)", Default: fmt.Sprintf("%v", cfg.Images.ResizeLarge)}},
-		{Name: "max_width", Prompt: &survey.Input{Message: "Max Width", Default: intToStringOr(cfg.Images.MaxWidth, 1200)}},
-		{Name: "max_height", Prompt: &survey.Input{Message: "Max Height", Default: intToStringOr(cfg.Images.MaxHeight, 800)}},
-	}
-	answers := struct {
-		Supported   string `survey:"supported"`
-		MaxFileSize string `survey:"max_file_size"`
-		Resize      string `survey:"resize_large"`
-		MaxWidth    string `survey:"max_width"`
-		MaxHeight   string `survey:"max_height"`
-	}{}
-	if err := survey.Ask(qs, &answers); err != nil {
-		return err
-	}
-	cfg.Images.SupportedFormats = splitList(answers.Supported)
-	if v, err := strconv.ParseInt(answers.MaxFileSize, 10, 64); err == nil {
-		cfg.Images.MaxFileSize = v
-	}
-	if v, err := strconv.ParseBool(answers.Resize); err == nil {
-		cfg.Images.ResizeLarge = v
-	}
-	if v, err := strconv.Atoi(answers.MaxWidth); err == nil {
-		cfg.Images.MaxWidth = v
-	}
-	if v, err := strconv.Atoi(answers.MaxHeight); err == nil {
-		cfg.Images.MaxHeight = v
-	}
-	return nil
-}
-
-// Utility helpers -----------------------------------------------------------
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-func intToStringOr(v int, fallback int) string {
-	if v == 0 {
-		return fmt.Sprintf("%d", fallback)
-	}
-	return fmt.Sprintf("%d", v)
-}
-
-func int64ToStringOr(v int64, fallback int64) string {
-	if v == 0 {
-		return fmt.Sprintf("%d", fallback)
-	}
-	return fmt.Sprintf("%d", v)
-}
-
-func floatToStringOr(v float64, fallback float64) string {
-	if v == 0 {
-		return fmt.Sprintf("%.2f", fallback)
-	}
-	return fmt.Sprintf("%.2f", v)
 }

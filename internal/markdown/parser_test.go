@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"conflux/internal/config"
 )
 
 func TestParseFile(t *testing.T) {
@@ -511,59 +509,6 @@ func TestConvertInlineCode(t *testing.T) {
 		if result != tc.expected {
 			t.Errorf("convertInlineCode(%q) = %q, expected %q", tc.input, result, tc.expected)
 		}
-	}
-}
-
-func TestProcessMermaidDiagram(t *testing.T) {
-	// Create a basic config for testing
-	cfg := &config.Config{
-		Mermaid: config.MermaidConfig{
-			Mode: "preserve",
-		},
-	}
-
-	t.Run("Preserve mode", func(t *testing.T) {
-		content := "graph TD\n    A --> B"
-		result := processMermaidDiagram(content, cfg, nil, "")
-
-		expected := `<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[graph TD
-    A --> B]]></ac:plain-text-body></ac:structured-macro>`
-
-		if result != expected {
-			t.Errorf("Expected preserve mode to return code block, got: %s", result)
-		}
-	})
-
-	// Note: Testing image conversion mode would require mocking the mermaid processor
-	// and setting up more complex test infrastructure. For now, we test the preserve mode
-	// which is the most straightforward path.
-}
-
-func TestConvertToConfluenceFormatWithMermaid(t *testing.T) {
-	cfg := &config.Config{
-		Mermaid: config.MermaidConfig{
-			Mode: "preserve",
-		},
-	}
-
-	markdown := "# Test\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nRegular text."
-
-	result := ConvertToConfluenceFormatWithMermaid(markdown, cfg, nil, "")
-
-	if !strings.Contains(result, "<h1>Test</h1>") {
-		t.Error("Expected H1 header in result")
-	}
-
-	if !strings.Contains(result, `ac:name="code"`) {
-		t.Error("Expected mermaid to be converted to code block")
-	}
-
-	if !strings.Contains(result, `ac:parameter ac:name="language">mermaid`) {
-		t.Error("Expected mermaid language parameter")
-	}
-
-	if !strings.Contains(result, "<p>Regular text.</p>") {
-		t.Error("Expected regular paragraph")
 	}
 }
 

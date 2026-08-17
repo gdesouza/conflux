@@ -49,10 +49,10 @@ uninstall:
 	@echo "Uninstalled $(BINARY_NAME) from $(INSTALL_DIR)/$(BINARY_NAME)"
 
 run:
-	go run ./cmd/conflux -config examples/config.yaml
+	go run ./cmd/conflux --help
 
 dev:
-	go run ./cmd/conflux -config examples/config.yaml -verbose -dry-run
+	go run ./cmd/conflux --help
 
 install-deps:
 	go mod tidy

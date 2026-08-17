@@ -10,10 +10,9 @@ func TestResolveRuntimePrecedence(t *testing.T) {
 	t.Setenv("CONFLUX_SPACE_KEY", "ENV")
 	source := &Config{
 		Confluence: ConfluenceConfig{BaseURL: "https://example", Username: "user", APIToken: "token", SpaceKey: "CONFIG"},
-		Local:      LocalConfig{MarkdownDir: "./global", Exclude: []string{"global.md"}},
 		Projects: []ProjectConfig{
-			{Name: "alpha", SpaceKey: "ALPHA", Local: LocalConfig{MarkdownDir: "./alpha"}},
-			{Name: "beta", SpaceKey: "BETA", Local: LocalConfig{MarkdownDir: "./beta"}},
+			{Name: "alpha", SpaceKey: "ALPHA"},
+			{Name: "beta", SpaceKey: "BETA"},
 		},
 	}
 	tests := []struct {
@@ -44,7 +43,7 @@ func TestResolveRuntimeConfiguredAndDefaultProfileFallbacks(t *testing.T) {
 		t.Fatalf("configured fallback=%#v error=%v", runtime, err)
 	}
 
-	profilesOnly := &Config{Projects: []ProjectConfig{{Name: "alpha", SpaceKey: "ALPHA", Local: LocalConfig{MarkdownDir: "./alpha"}}}}
+	profilesOnly := &Config{Projects: []ProjectConfig{{Name: "alpha", SpaceKey: "ALPHA"}}}
 	runtime, err = ResolveRuntime(profilesOnly, RuntimeOptions{})
 	if err != nil || runtime.Confluence.SpaceKey != "ALPHA" || runtime.Profile != "alpha" {
 		t.Fatalf("profile fallback=%#v error=%v", runtime, err)
@@ -62,16 +61,13 @@ func TestResolveRuntimeDoesNotMutateSource(t *testing.T) {
 	t.Setenv("CONFLUX_SPACE_KEY", "")
 	source := &Config{
 		Confluence: ConfluenceConfig{SpaceKey: "CONFIG"},
-		Local:      LocalConfig{Exclude: []string{"keep.md"}},
-		Images:     ImageConfig{SupportedFormats: []string{"png"}},
 	}
 	runtime, err := ResolveRuntime(source, RuntimeOptions{SpaceKey: "FLAG"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime.Local.Exclude[0] = "changed.md"
-	runtime.Images.SupportedFormats[0] = "gif"
-	if source.Confluence.SpaceKey != "CONFIG" || source.Local.Exclude[0] != "keep.md" || source.Images.SupportedFormats[0] != "png" {
+	runtime.Confluence.SpaceKey = "changed"
+	if source.Confluence.SpaceKey != "CONFIG" {
 		t.Fatalf("source was mutated: %#v", source)
 	}
 }

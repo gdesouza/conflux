@@ -20,9 +20,7 @@ func TestConfigNonInteractivePrint(t *testing.T) {
 		"--set", "confluence.base_url=https://example",
 		"--set", "confluence.username=user",
 		"--set", "confluence.api_token=tok",
-		"--set", "mermaid.mode=preserve",
-		"--set", "mermaid.format=png",
-		"--add-project", "name=docs,space_key=DOCS,markdown_dir=./docs,exclude=README.md",
+		"--add-project", "name=docs,space_key=DOCS",
 	}
 	out, _, err := runCmdForTest(t, args)
 	if err != nil { // validation should pass because project supplies space key
@@ -41,11 +39,6 @@ func TestConfigNonInteractivePrint(t *testing.T) {
 		"projects:",
 		"- name: docs",
 		"space_key: DOCS",
-		"markdown_dir: ./docs",
-		"exclude:",
-		"mermaid:",
-		"mode: preserve",
-		"format: png",
 	}
 	for _, m := range mustContain {
 		if !strings.Contains(out, m) {
