@@ -98,7 +98,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 	log.Debug("Parsed markdown file: title=%s", doc.Title)
 
-	// Convert markdown -> Confluence storage format (initial pass without attachments/mermaid images)
+	// Convert standalone markdown to Confluence storage format.
 	content := markdown.ConvertToConfluenceFormat(doc.Content)
 
 	// Resolve parent ID if provided

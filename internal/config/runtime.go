@@ -15,9 +15,6 @@ type RuntimeOptions struct {
 // Resolving it never mutates the source configuration.
 type RuntimeConfig struct {
 	Confluence  ConfluenceConfig
-	Local       LocalConfig
-	Mermaid     MermaidConfig
-	Images      ImageConfig
 	Profile     string
 	SpaceSource string
 }
@@ -28,7 +25,6 @@ func ResolveRuntime(source *Config, options RuntimeOptions) (RuntimeConfig, erro
 	}
 	runtime := RuntimeConfig{
 		Confluence: source.Confluence,
-		Local:      cloneLocal(source.Local), Mermaid: source.Mermaid, Images: cloneImages(source.Images),
 	}
 
 	spaceFlag := strings.TrimSpace(options.SpaceKey)
@@ -42,7 +38,6 @@ func ResolveRuntime(source *Config, options RuntimeOptions) (RuntimeConfig, erro
 				return RuntimeConfig{}, err
 			}
 			runtime.Profile = profile.Name
-			runtime.Local = cloneLocal(profile.Local)
 		}
 		return runtime, nil
 	}
@@ -52,7 +47,6 @@ func ResolveRuntime(source *Config, options RuntimeOptions) (RuntimeConfig, erro
 			return RuntimeConfig{}, err
 		}
 		runtime.Profile = profile.Name
-		runtime.Local = cloneLocal(profile.Local)
 		runtime.Confluence.SpaceKey = profile.SpaceKey
 		runtime.SpaceSource = "--project"
 		return runtime, nil
@@ -69,7 +63,6 @@ func ResolveRuntime(source *Config, options RuntimeOptions) (RuntimeConfig, erro
 	if len(source.Projects) > 0 {
 		profile := source.Projects[0]
 		runtime.Profile = profile.Name
-		runtime.Local = cloneLocal(profile.Local)
 		runtime.Confluence.SpaceKey = profile.SpaceKey
 		runtime.SpaceSource = "default project " + profile.Name
 		return runtime, nil
@@ -84,14 +77,4 @@ func findProject(projects []ProjectConfig, name string) (ProjectConfig, error) {
 		}
 	}
 	return ProjectConfig{}, fmt.Errorf("project %q not found", name)
-}
-
-func cloneLocal(local LocalConfig) LocalConfig {
-	local.Exclude = append([]string(nil), local.Exclude...)
-	return local
-}
-
-func cloneImages(images ImageConfig) ImageConfig {
-	images.SupportedFormats = append([]string(nil), images.SupportedFormats...)
-	return images
 }

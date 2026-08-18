@@ -7,11 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"conflux/internal/config"
-	"conflux/internal/confluence"
-	"conflux/internal/images"
-	"conflux/internal/mermaid"
 )
 
 type Document struct {
@@ -59,70 +54,49 @@ func extractTitle(lines []string, filePath string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// FindMarkdownFiles returns Markdown files below path, excluding files whose
+// base name matches one of the supplied patterns.
 func FindMarkdownFiles(path string, exclude []string) ([]string, error) {
-	var files []string
-
-	// Check if the path is a single file
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to access path %s: %w", path, err)
 	}
-
 	if !info.IsDir() {
-		// Handle single file
 		if strings.ToLower(filepath.Ext(path)) != ".md" {
 			return nil, fmt.Errorf("file %s is not a markdown file (.md)", path)
 		}
-
-		// Check if file matches any exclude pattern
 		for _, pattern := range exclude {
 			if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
 				return nil, fmt.Errorf("file %s matches exclude pattern %s", path, pattern)
 			}
 		}
-
-		// Convert to absolute path
-		var absPath string
-		absPath, err = filepath.Abs(path)
+		absolute, err := filepath.Abs(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 		}
-
-		return []string{absPath}, nil
+		return []string{absolute}, nil
 	}
 
-	// Handle directory (original logic)
-	err = filepath.Walk(path, func(walkPath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	var files []string
+	err = filepath.Walk(path, func(walkPath string, entry os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-
-		if info.IsDir() {
+		if entry.IsDir() || strings.ToLower(filepath.Ext(walkPath)) != ".md" {
 			return nil
 		}
-
-		if strings.ToLower(filepath.Ext(walkPath)) != ".md" {
-			return nil
-		}
-
 		for _, pattern := range exclude {
 			if matched, _ := filepath.Match(pattern, filepath.Base(walkPath)); matched {
 				return nil
 			}
 		}
-
 		files = append(files, walkPath)
 		return nil
 	})
-
 	return files, err
 }
 
 func ConvertToConfluenceFormat(markdown string) string {
-	return ConvertToConfluenceFormatWithMermaid(markdown, nil, nil, "")
-}
-
-func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, client *confluence.Client, pageID string) string {
 	lines := strings.Split(markdown, "\n")
 	var result []string
 	inCodeBlock := false
@@ -145,25 +119,11 @@ func ConvertToConfluenceFormatWithMermaid(markdown string, cfg *config.Config, c
 				// Ending code block
 				inCodeBlock = false
 
-				// Process the code block based on language
-				if codeBlockLang == "mermaid" && cfg != nil {
-					processed := processMermaidDiagram(strings.Join(codeBlockContent, "\n"), cfg, client, pageID)
-					if processed != "" {
-						result = append(result, processed)
-					} else {
-						// Fallback to regular code block if processing failed
-						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[`, codeBlockLang))
-						result = append(result, strings.Join(codeBlockContent, "\n"))
-						result = append(result, `]]></ac:plain-text-body></ac:structured-macro>`)
-					}
+				codeContent := strings.TrimSpace(strings.Join(codeBlockContent, "\n"))
+				if codeBlockLang != "" {
+					result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeBlockLang, codeContent))
 				} else {
-					// Regular code block processing
-					codeContent := strings.TrimSpace(strings.Join(codeBlockContent, "\n"))
-					if codeBlockLang != "" {
-						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">%s</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeBlockLang, codeContent))
-					} else {
-						result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeContent))
-					}
+					result = append(result, fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, codeContent))
 				}
 
 				codeBlockLang = ""
@@ -328,8 +288,8 @@ func convertInlineFormatting(text string) string {
 // forms such as a linked badge - [![alt](image)](target) - survive intact.
 //
 // Images pointing at a remote URL become <ri:url> image macros. Images pointing
-// at a local file are left as markdown, because ConvertToConfluenceFormatWithImages
-// replaces those later by matching on the original markdown syntax.
+// at a local file remain Markdown; editable artifacts manage their attachment
+// references through the page-specific attachment directory.
 func convertLinksFromEscaped(text string) string {
 	var b strings.Builder
 
@@ -818,124 +778,4 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "\"", "&quot;")
 	text = strings.ReplaceAll(text, "'", "&#39;")
 	return text
-}
-
-func processMermaidDiagram(content string, cfg *config.Config, client *confluence.Client, pageID string) string {
-	if cfg.Mermaid.Mode == "preserve" {
-		// Return original mermaid code block
-		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
-	}
-
-	// Validate mermaid content
-	if err := mermaid.ValidateContent(content); err != nil {
-		// Return as regular code block if invalid
-		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
-	}
-
-	// Create processor
-	processor := mermaid.NewProcessor(&cfg.Mermaid, nil)
-
-	// Process diagram to image
-	result, err := processor.ProcessDiagram(content)
-	if err != nil {
-		// Return as regular code block if processing failed
-		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
-	}
-
-	// Check if we have a pageID for attachment upload
-	if pageID == "" || client == nil {
-		// For new pages or when client is not available, fall back to code block
-		_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
-		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
-	}
-
-	// Upload image as attachment
-	attachment, err := client.UploadAttachment(pageID, result.ImagePath)
-	if err != nil {
-		// Cleanup temp file and return as code block
-		_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
-		return fmt.Sprintf(`<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">mermaid</ac:parameter><ac:plain-text-body><![CDATA[%s]]></ac:plain-text-body></ac:structured-macro>`, content)
-	}
-
-	// Determine the filename to use for the attachment reference
-	filename := attachment.Title
-	if filename == "" {
-		// Fallback to the generated filename if Confluence API doesn't return it
-		filename = result.Filename
-	}
-	if filename == "" {
-		// Final fallback to Title field if available
-		filename = attachment.Title
-	}
-
-	// Cleanup temp file
-	_ = processor.Cleanup(result) // Best effort cleanup, ignore errors
-
-	// Return Confluence image macro with full page width
-	return fmt.Sprintf(`<ac:image ac:width="100%%"><ri:attachment ri:filename="%s"/></ac:image>`, filename)
-}
-
-// ConvertToConfluenceFormatWithImages processes markdown with image attachment support
-func ConvertToConfluenceFormatWithImages(markdown string, cfg *config.Config, client *confluence.Client, pageID string, markdownFilePath string) (string, error) {
-	// Process mermaid diagrams first
-	content := ConvertToConfluenceFormatWithMermaid(markdown, cfg, client, pageID)
-
-	// Now process images if we have the necessary components
-	if cfg == nil || client == nil || pageID == "" || markdownFilePath == "" {
-		// No image processing possible - return content as-is
-		return content, nil
-	}
-
-	// Create image processor
-	imageProcessor := images.NewProcessor(&cfg.Images, nil)
-
-	// Get directory of the markdown file to resolve relative image paths
-	markdownDir := filepath.Dir(markdownFilePath)
-
-	// Find image references in the original markdown content
-	imageRefs, err := imageProcessor.FindImageReferences(markdown, markdownDir)
-	if err != nil {
-		// Log error but continue without image processing
-		return content, nil
-	}
-
-	// Validate image references
-	validRefs, err := imageProcessor.ValidateImageReferences(imageRefs)
-	if err != nil {
-		// Log error but continue without image processing
-		return content, nil
-	}
-
-	// If no valid image references, return content as-is
-	if len(validRefs) == 0 {
-		return content, nil
-	}
-
-	// Process each valid image reference
-	for _, ref := range validRefs {
-		// Upload image as attachment
-		attachment, err := client.UploadAttachment(pageID, ref.AbsolutePath)
-		if err != nil {
-			// Skip this image on upload error, continue with others
-			continue
-		}
-
-		// Determine the filename for the attachment reference
-		filename := attachment.Title
-		if filename == "" {
-			filename = attachment.Title
-		}
-		if filename == "" {
-			filename = images.GetImageFilename(ref.AbsolutePath)
-		}
-
-		// Replace the markdown image syntax with Confluence image macro
-		confluenceImageMacro := fmt.Sprintf(`<ac:image><ri:attachment ri:filename="%s"/></ac:image>`, filename)
-
-		// Replace in the content (note: we're working with already processed content that may have HTML)
-		// We need to be careful to replace the original markdown syntax, not HTML
-		content = strings.ReplaceAll(content, ref.MarkdownSyntax, confluenceImageMacro)
-	}
-
-	return content, nil
 }
