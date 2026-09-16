@@ -20,6 +20,11 @@ type MockClient struct {
 	UpdateCalls      []string                // titles updated
 	LastUploadedFile string
 	FailFindByTitle  bool
+
+	SearchHits     []SearchResult // hits returned by SearchPages
+	SearchTotal    int            // total reported by SearchPages (defaults to len(SearchHits))
+	SearchErr      error          // error returned by SearchPages
+	LastSearchOpts SearchOptions  // options of the most recent SearchPages call
 }
 
 func NewMockClient() *MockClient {
@@ -94,6 +99,19 @@ func (m *MockClient) GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageI
 		return []PageInfo{}, nil
 	}
 	return m.SpaceHierarchies[spaceKey], nil
+}
+
+func (m *MockClient) SearchPages(opts SearchOptions) (*SearchResults, error) {
+	m.LastSearchOpts = opts
+	if m.SearchErr != nil {
+		return nil, m.SearchErr
+	}
+	cql, err := BuildCQL(opts)
+	if err != nil {
+		return nil, err
+	}
+	total := max(m.SearchTotal, len(m.SearchHits))
+	return &SearchResults{CQL: cql, Total: total, Results: m.SearchHits}, nil
 }
 
 func (m *MockClient) GetPageAncestors(pageID string) ([]PageInfo, error) {

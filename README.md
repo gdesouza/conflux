@@ -104,6 +104,60 @@ Supported layouts are `default`, `center`, `wide`, and `full-width`; width is an
 
 Unsupported macros and structures are preserved as opaque marked regions. Editing inside an opaque region is intentionally restricted; surrounding Markdown remains editable.
 
+## Search
+
+Find pages by keyword. Keywords are matched against the full page text (title,
+body, and attachments) through the Confluence search API:
+
+```sh
+# Keyword search in the selected space
+conflux search deploy
+
+# Both keywords must match; --any matches either
+conflux search robot fleet
+conflux search robot fleet --any
+
+# Quote an argument to search for a phrase
+conflux search "battery charging"
+
+# Match titles only, or search every space
+conflux search api --title
+conflux search deploy --all-spaces
+```
+
+Each hit prints as:
+
+```
+IT | 2020-06-09 Retrospective | 940802376
+Last update: 2020-06-09
+URL: https://example.atlassian.net/wiki/spaces/IT/pages/940802376/2020-06-09+Retrospective
+```
+
+Results can be narrowed by other indexed fields, with or without keywords:
+
+```sh
+# Label (repeatable), creator, or contributor
+conflux search --label runbook --label ops
+conflux search deploy --author jdoe --contributor asmith
+
+# Modified since YYYY-MM-DD or a duration (30m, 12h, 7d, 2w)
+conflux search --label adr --since 7d
+
+# Descendants of a page, or a different content type
+conflux search deploy --ancestor 5911379971
+conflux search outage --type blogpost
+```
+
+Use `--sort` (relevance, modified, created, title), `--limit`, and
+`--show-excerpt` to include a snippet of the matched text. `--output json`
+emits machine-readable results, and `--verbose` prints the generated CQL. For
+anything the flags do not cover, `--cql` takes a raw
+[CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/)
+query.
+
+A keyword or narrowing filter is required; a space alone is what `conflux pages`
+already lists.
+
 ## Other commands
 
 ```sh

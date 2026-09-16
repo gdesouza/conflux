@@ -9,6 +9,7 @@ type ConfluenceClient interface {
 	GetPage(pageID string) (*Page, error)
 	UploadAttachment(pageID, filePath string) (*Attachment, error)
 	GetPageHierarchy(spaceKey, parentPageTitle string) ([]PageInfo, error)
+	SearchPages(opts SearchOptions) (*SearchResults, error)
 	GetPageAncestors(pageID string) ([]PageInfo, error)
 	GetChildPages(pageID string) ([]PageInfo, error)
 	ListAttachments(pageID string) ([]Attachment, error)

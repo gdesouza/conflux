@@ -23,7 +23,8 @@ plus commands for configuration and page inspection.`,
   conflux push -f ./doc.md -s DOCS               # Create standalone page
   conflux pull -s DOCS -p "My Page" -f markdown  # Download page as markdown
   conflux pages -s DOCS                          # List all pages
-  conflux pages show -s DOCS -p "API"            # Show page details`,
+  conflux pages show -s DOCS -p "API"            # Show page details
+  conflux search deploy -s DOCS                  # Search pages by keyword`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
